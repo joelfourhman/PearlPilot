@@ -30,6 +30,7 @@ $script:blockedForCurrentLock = $false
 $script:manualMining = $false
 $script:manualPowerPercent = $null
 $script:powerLimitRestorePoints = @()
+$script:powerMenuItems = @{}
 
 function Show-PPSettings {
     param([Parameter(Mandatory=$true)][string]$AppRoot)
@@ -235,11 +236,12 @@ function Enable-PPPowerLimitProfile {
                 -MinimumLimitW $power.MinimumLimitW `
                 -MaximumLimitW $power.MaximumLimitW `
                 -Percent $Percent
-            $effectiveTarget = [Math]::Min($power.CurrentLimitW, $target)
+            $effectiveTarget = $target
             $restorePoint = [pscustomobject]@{
                 GpuIndex = $gpuIndex
                 PreviousLimitW = $power.CurrentLimitW
                 TargetLimitW = $effectiveTarget
+                EffectivePercent = [int][Math]::Round(($effectiveTarget / $power.DefaultLimitW) * 100)
                 Changed = $false
             }
             $restorePoints += $restorePoint
@@ -252,7 +254,7 @@ function Enable-PPPowerLimitProfile {
                     throw "GPU $gpuIndex did not apply the requested power limit."
                 }
             }
-            Write-PPLog "GPU $gpuIndex power limit is $effectiveTarget W ($Percent% profile)."
+            Write-PPLog "GPU $gpuIndex power limit is $effectiveTarget W ($($restorePoint.EffectivePercent)% effective; $Percent% requested)."
         }
     } catch {
         for ($index = $restorePoints.Count - 1; $index -ge 0; $index--) {
@@ -292,6 +294,29 @@ function Restore-PPPowerLimits {
         return
     }
     throw 'The miner stopped, but one or more GPU power limits still need administrator approval to be restored.'
+}
+
+function Get-PPPowerFloorLabel {
+    try {
+        $floors = @(
+            foreach ($gpuText in ([string]$configuration.GpuList).Split(',')) {
+                $power = Get-PPGpuPowerLimit -GpuIndex ([int]$gpuText)
+                [int][Math]::Ceiling(($power.MinimumLimitW / $power.DefaultLimitW) * 100)
+            }
+        )
+        $highestFloor = ($floors | Measure-Object -Maximum).Maximum
+        "Hardware power floor: $highestFloor%"
+    } catch {
+        'Hardware power floor: unavailable'
+    }
+}
+
+function Get-PPPowerProfileStatus {
+    $effectivePercent = ($script:powerLimitRestorePoints | Measure-Object -Property EffectivePercent -Maximum).Maximum
+    if ($effectivePercent -and [int]$effectivePercent -ne [int]$script:manualPowerPercent) {
+        return "$($script:manualPowerPercent)% request → $effectivePercent% floor"
+    }
+    "$($script:manualPowerPercent)% power"
 }
 
 function Restore-PPManagedMiner {
@@ -368,53 +393,76 @@ $mineNowItem.Add_Click({
 })
 [void]$menu.Items.Add($mineNowItem)
 
-$mine75Item = New-Object Windows.Forms.ToolStripMenuItem 'Mine 75% GPU'
-$mine75Item.Add_Click({
+function Invoke-PPPowerMiningMenu {
+    param([Parameter(Mandatory=$true)][ValidateSet(25, 50, 75, 100)][int]$Percent)
+
     try {
-        if ($manualMining -and $manualPowerPercent -eq 75) {
+        if ($manualMining -and $manualPowerPercent -eq $Percent) {
             $script:manualMining = $false
             Stop-PPManagedMiner -Reason 'Stopped manually'
             Restore-PPPowerLimits
-            Write-PPLog 'Manual 75% GPU mining disabled.'
+            Write-PPLog "Manual $Percent% GPU mining disabled."
         } elseif (-not $manualMining -and $powerLimitRestorePoints.Count -gt 0) {
             Restore-PPPowerLimits
         } else {
-            Enable-PPPowerLimitProfile -Percent 75
+            Enable-PPPowerLimitProfile -Percent $Percent
             $script:manualMining = $true
             $script:blockedForCurrentLock = $false
             $script:crashTimes = @()
             $script:nextStartUtc = [DateTime]::MinValue
-            Write-PPLog 'Manual mining enabled with the 75% GPU power profile.'
+            Write-PPLog "Manual mining enabled with the $Percent% GPU power profile."
         }
         Update-PPManualMenu
     } catch {
         Update-PPManualMenu
-        Show-PPTrayError -Action '75% GPU mining' -Exception $_.Exception
+        Show-PPTrayError -Action "$Percent% GPU mining" -Exception $_.Exception
     }
-})
-[void]$menu.Items.Add($mine75Item)
+}
+
+foreach ($percent in @(25, 50, 75, 100)) {
+    $powerItem = New-Object Windows.Forms.ToolStripMenuItem "Mine $percent% GPU"
+    $powerItem.Tag = $percent
+    $powerItem.Add_Click({
+        param($sender, $eventArgs)
+        Invoke-PPPowerMiningMenu -Percent ([int]$sender.Tag)
+    })
+    $script:powerMenuItems[$percent] = $powerItem
+    [void]$menu.Items.Add($powerItem)
+}
+
+$powerFloorItem = New-Object Windows.Forms.ToolStripMenuItem (Get-PPPowerFloorLabel)
+$powerFloorItem.Enabled = $false
+[void]$menu.Items.Add($powerFloorItem)
 
 function Update-PPManualMenu {
-    if ($script:manualMining -and $script:manualPowerPercent -eq 75) {
+    foreach ($percent in @(25, 50, 75, 100)) {
+        $script:powerMenuItems[$percent].Text = "Mine $percent% GPU"
+        $script:powerMenuItems[$percent].Enabled = $true
+    }
+
+    if ($script:manualMining -and $null -ne $script:manualPowerPercent) {
         $mineNowItem.Text = 'Mine now'
         $mineNowItem.Enabled = $false
-        $mine75Item.Text = 'Stop mining'
-        $mine75Item.Enabled = $true
+        foreach ($percent in @(25, 50, 75, 100)) {
+            $script:powerMenuItems[$percent].Enabled = ($percent -eq $script:manualPowerPercent)
+        }
+        $script:powerMenuItems[[int]$script:manualPowerPercent].Text = 'Stop mining'
     } elseif ($script:manualMining) {
         $mineNowItem.Text = 'Stop mining'
         $mineNowItem.Enabled = $true
-        $mine75Item.Text = 'Mine 75% GPU'
-        $mine75Item.Enabled = $false
+        foreach ($percent in @(25, 50, 75, 100)) {
+            $script:powerMenuItems[$percent].Enabled = $false
+        }
     } elseif ($script:powerLimitRestorePoints.Count -gt 0) {
         $mineNowItem.Text = 'Mine now'
         $mineNowItem.Enabled = $false
-        $mine75Item.Text = 'Restore GPU power limit'
-        $mine75Item.Enabled = $true
+        foreach ($percent in @(25, 50, 75, 100)) {
+            $script:powerMenuItems[$percent].Enabled = ($percent -eq $script:manualPowerPercent)
+        }
+        $script:powerMenuItems[[int]$script:manualPowerPercent].Text = 'Restore GPU power limit'
     } else {
         $mineNowItem.Text = 'Mine now'
         $mineNowItem.Enabled = $true
-        $mine75Item.Text = 'Mine 75% GPU'
-        $mine75Item.Enabled = $true
     }
 }
 Update-PPManualMenu
@@ -557,7 +605,7 @@ try {
             }
         }
 
-        $displayStatus = if ($running -and $manualPowerPercent -eq 75) { 'Manual mining · 75% power' } elseif ($running -and $manualMining) { 'Manual mining' } elseif ($running) { 'Mining' } else { [string]$decision.Status }
+        $displayStatus = if ($running -and $null -ne $manualPowerPercent) { 'Manual mining · ' + (Get-PPPowerProfileStatus) } elseif ($running -and $manualMining) { 'Manual mining' } elseif ($running) { 'Mining' } else { [string]$decision.Status }
         if ($temperatureC -ne $null) { $displayStatus += " · $temperatureC°C" }
         $statusItem.Text = 'Status: ' + $displayStatus
         $tip = 'PearlPilot: ' + $displayStatus
