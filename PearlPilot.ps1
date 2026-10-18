@@ -33,8 +33,8 @@ function Show-PPSettings {
 
     $form = New-Object Windows.Forms.Form
     $form.Text = 'PearlPilot Settings'
-    $form.Width = 620
-    $form.Height = 510
+    $form.Width = 600
+    $form.Height = 500
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
     $form.StartPosition = 'CenterScreen'
@@ -80,7 +80,7 @@ function Show-PPSettings {
         $form.Controls.Add($label)
         $form.Controls.Add($box)
         $fields += $box
-        $top += 43
+        $top += 41
     }
 
     $browse = New-Object Windows.Forms.Button
@@ -118,16 +118,16 @@ function Show-PPSettings {
     $note = New-Object Windows.Forms.Label
     $note.Text = 'PearlPilot refuses to mine if it cannot read the lock state or NVIDIA temperature.'
     $note.Left = 24
-    $note.Top = $top + 70
+    $note.Top = $top + 58
     $note.Width = 530
-    $note.Height = 40
+    $note.Height = 34
     $note.ForeColor = [Drawing.Color]::Silver
     $form.Controls.Add($note)
 
     $save = New-Object Windows.Forms.Button
     $save.Text = 'Save'
     $save.Left = 445
-    $save.Top = $top + 115
+    $save.Top = $top + 96
     $save.Width = 105
     $save.Height = 34
     $save.BackColor = [Drawing.Color]::FromArgb(0, 120, 215)
