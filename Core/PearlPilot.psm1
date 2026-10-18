@@ -82,92 +82,6 @@ function Find-PPNvidiaSmi {
     $null
 }
 
-function Get-PPGpuPowerLimit {
-    param([Parameter(Mandatory=$true)][ValidateRange(0, 128)][int]$GpuIndex)
-
-    $nvidiaSmi = Find-PPNvidiaSmi
-    if (-not $nvidiaSmi) { throw 'nvidia-smi.exe was not found.' }
-
-    $query = 'index,power.limit,power.default_limit,power.min_limit,power.max_limit'
-    $output = @(& $nvidiaSmi "--id=$GpuIndex" "--query-gpu=$query" '--format=csv,noheader,nounits' 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not read GPU $GpuIndex power limits: $($output -join ' ')"
-    }
-
-    $row = @($output | Where-Object { [string]$_ -match '^\s*\d+\s*,' } | Select-Object -First 1)
-    if ($row.Count -ne 1) { throw "GPU $GpuIndex did not return usable power-limit data." }
-
-    $columns = @(([string]$row[0]).Split(',') | ForEach-Object { $_.Trim() })
-    if ($columns.Count -ne 5 -or [int]$columns[0] -ne $GpuIndex) {
-        throw "GPU $GpuIndex returned unexpected power-limit data."
-    }
-
-    $values = @()
-    foreach ($column in $columns[1..4]) {
-        $value = 0.0
-        if (-not [double]::TryParse(
-            $column,
-            [Globalization.NumberStyles]::Float,
-            [Globalization.CultureInfo]::InvariantCulture,
-            [ref]$value
-        )) {
-            throw "GPU $GpuIndex returned an unsupported power-limit value."
-        }
-        $values += $value
-    }
-
-    [pscustomobject]@{
-        GpuIndex = $GpuIndex
-        CurrentLimitW = $values[0]
-        DefaultLimitW = $values[1]
-        MinimumLimitW = $values[2]
-        MaximumLimitW = $values[3]
-    }
-}
-
-function Get-PPPowerLimitTarget {
-    param(
-        [Parameter(Mandatory=$true)][double]$DefaultLimitW,
-        [Parameter(Mandatory=$true)][double]$MinimumLimitW,
-        [Parameter(Mandatory=$true)][double]$MaximumLimitW,
-        [Parameter(Mandatory=$true)][ValidateRange(1, 100)][int]$Percent
-    )
-
-    if ($MinimumLimitW -gt $MaximumLimitW) { throw 'The GPU power-limit range is invalid.' }
-    $requested = [Math]::Round($DefaultLimitW * ($Percent / 100.0), 0, [MidpointRounding]::AwayFromZero)
-    [Math]::Min($MaximumLimitW, [Math]::Max($MinimumLimitW, $requested))
-}
-
-function Set-PPGpuPowerLimit {
-    param(
-        [Parameter(Mandatory=$true)][ValidateRange(0, 128)][int]$GpuIndex,
-        [Parameter(Mandatory=$true)][ValidateRange(1, 2000)][double]$LimitW
-    )
-
-    $nvidiaSmi = Find-PPNvidiaSmi
-    if (-not $nvidiaSmi) { throw 'nvidia-smi.exe was not found.' }
-
-    $limit = $LimitW.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture)
-    try {
-        $process = Start-Process `
-            -FilePath $nvidiaSmi `
-            -ArgumentList @("--id=$GpuIndex", "--power-limit=$limit") `
-            -Verb RunAs `
-            -WindowStyle Hidden `
-            -Wait `
-            -PassThru
-    } catch [ComponentModel.Win32Exception] {
-        if ($_.Exception.NativeErrorCode -eq 1223) {
-            throw 'Administrator approval was canceled; the GPU power limit was not changed.'
-        }
-        throw
-    }
-
-    if ($process.ExitCode -ne 0) {
-        throw "NVIDIA rejected the $limit W power limit for GPU $GpuIndex."
-    }
-}
-
 function Test-PPConfiguration {
     param([Parameter(Mandatory=$true)]$Configuration, [switch]$AllowMissingMiner, [switch]$AllowMissingTelemetry)
 
@@ -424,9 +338,6 @@ Export-ModuleMember -Function @(
     'Save-PPConfiguration',
     'Write-PPLog',
     'Find-PPNvidiaSmi',
-    'Get-PPGpuPowerLimit',
-    'Get-PPPowerLimitTarget',
-    'Set-PPGpuPowerLimit',
     'Test-PPConfiguration',
     'Get-PPCurrentSessionState',
     'Get-PPMiningDecision',

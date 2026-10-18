@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE" alt="Windows PowerShell 5.1">
 </p>
 
-> Lock → wait → mine. Unlock → stop. Or choose a **25%**, **50%**, **75%**, or **100%** GPU power profile from the tray.
+> Lock → wait → mine. Unlock → stop. Or choose **Mine now** from the tray.
 
 PearlPilot runs as the signed-in user, supervises exactly one WildRig process, and stays out of the way until it has something useful to report. Automatic mode mines only after Windows has remained locked for the configured delay. Manual mode bypasses the lock requirement, but never bypasses temperature, telemetry, ownership, duplicate-process, or crash-loop protections.
 
@@ -24,11 +24,10 @@ PearlPilot runs as the signed-in user, supervises exactly one WildRig process, a
 
 - **Tiny surface area:** one tray process, one PowerShell module, one JSON settings file.
 - **Fail-safe defaults:** unknown lock state or missing NVIDIA telemetry prevents automatic mining.
-- **Immediate control:** right-click a 25%, 50%, 75%, or 100% power profile—or use unrestricted **Mine now**.
+- **Immediate control:** right-click **Mine now** / **Stop mining** without opening a terminal.
 - **Thermal hysteresis:** stop at the configured limit; resume only after cooling another 10°C.
 - **Exact ownership:** PID plus creation time prevents stopping an unrelated process.
-- **Hardware-aware profiles:** PearlPilot reads each GPU's factory, minimum, and maximum power limits instead of hard-coding wattages.
-- **No background service:** a limited per-user scheduled task starts the app invisibly after sign-in. Power profiles request administrator approval only when applying or restoring an NVIDIA power limit.
+- **No elevation or service:** a limited per-user scheduled task starts the app invisibly after sign-in.
 - **No secrets:** PearlPilot needs only a public `prl1...` payout address—never a seed phrase or private key.
 
 ## How it works
@@ -37,7 +36,6 @@ PearlPilot runs as the signed-in user, supervises exactly one WildRig process, a
 flowchart LR
     U[Windows unlocked] --> I[Idle]
     U -->|Mine now| M[Mining]
-    U -->|Mine 25–100% GPU| G[Mining with hardware-aware power cap]
     L[Windows locked] --> D[Lock delay]
     D -->|Delay elapsed| M
     M -->|Unlock in automatic mode| I
@@ -70,7 +68,7 @@ Mining software is frequently flagged by antivirus products. Download WildRig on
    ```
 
 4. Complete the short setup form and select **Save**.
-5. Right-click the oyster icon in the notification area to inspect status or choose a GPU power profile. Approve the Windows administrator prompt when applying or restoring a limit.
+5. Right-click the oyster icon in the notification area to inspect status or choose **Mine now**.
 
 The setup form never asks for a password, recovery phrase, seed phrase, or private key. Many exchanges discourage direct pool payouts; check your exchange's current policy before using an exchange deposit address.
 
@@ -95,11 +93,6 @@ Settings are stored at `%LOCALAPPDATA%\PearlPilot\config.json`. The file contain
 Status: Manual mining · 80°C
 ────────────────────────────
 Stop mining
-Mine 25% GPU
-Mine 50% GPU
-Mine 75% GPU
-Mine 100% GPU
-Hardware power floor: 70%
 Automatic mining ✓
 Settings…
 Open logs
@@ -108,10 +101,6 @@ Exit PearlPilot
 ```
 
 - **Mine now** starts mining while Windows is unlocked and changes to **Stop mining**.
-- **Mine 25% / 50% / 75% / 100% GPU** targets that percentage of each selected GPU's factory power limit, then starts mining.
-- Every target is calculated per GPU and clamped to the range its driver reports. The tray displays the detected hardware floor. On this project's RTX 5090 test system, the supported range is 400–575W (about 70–100%), so both the 25% and 50% buttons safely resolve to the 400W minimum; 75% resolves to 431W.
-- Applying and restoring the cap uses NVIDIA's `nvidia-smi` and requires a Windows administrator prompt. PearlPilot records the previous limit in memory and restores that exact value when you stop, open Settings, or exit normally.
-- A power cap limits watts, not GPU utilization. WildRig may still report 99% utilization, so lower profiles can reduce contention but cannot guarantee stutter-free gameplay.
 - **Automatic mining** controls only the lock-triggered workflow.
 - **Settings…** stops the owned miner before opening the modal window, so supervision is never paused while the GPU continues mining.
 - **Open logs** opens the local log directory.
@@ -134,10 +123,8 @@ Manual mode is intentionally not persisted. After PearlPilot restarts, it return
 | WildRig crashes | Retries after 10 seconds; blocks after repeated crashes |
 | Settings window is open | Stops the owned miner before showing the modal UI |
 | PearlPilot exits | Stops its owned WildRig process in cleanup |
-| Power profile stops normally | Stops WildRig first, then restores the previous GPU power limit |
-| Administrator approval is canceled | Does not start reduced-power mining; never silently falls back to full power |
 
-WildRig also receives the configured temperature limit and watchdog arguments. Except for an explicit power-profile action, PearlPilot does not change GPU clocks, voltage, fan curves, or power limits. An abrupt process termination or power-limit restoration canceled at the administrator prompt can leave the lower cap active until it is restored or Windows restarts. Mining can draw substantial power and generate significant heat; hardware tuning remains the operator's responsibility.
+WildRig also receives the configured temperature limit and watchdog arguments. PearlPilot does not change GPU clocks, voltage, fan curves, or power limits. Mining can draw substantial power and generate significant heat; hardware tuning remains the operator's responsibility.
 
 ## Data and logs
 
@@ -169,10 +156,9 @@ Before relying on unattended mining on a new PC, perform this physical smoke tes
 
 1. Confirm **Mine now** starts exactly one WildRig process and the pool reports accepted shares.
 2. Choose **Stop mining** and confirm GPU utilization returns to idle.
-3. Choose a power profile, approve the prompt, and confirm `nvidia-smi --query-gpu=power.limit --format=csv` reports the calculated limit. Stop mining, approve restoration, and confirm the prior limit returns.
-4. Lock Windows, wait longer than the configured delay, then unlock and confirm mining stops.
-5. Open **Settings…** while mining and confirm WildRig stops before the window appears.
-6. Sign out and back in once to confirm the startup task restores the tray app.
+3. Lock Windows, wait longer than the configured delay, then unlock and confirm mining stops.
+4. Open **Settings…** while mining and confirm WildRig stops before the window appears.
+5. Sign out and back in once to confirm the startup task restores the tray app.
 
 ## Troubleshooting
 
@@ -191,10 +177,6 @@ Confirm the configured executable still exists, antivirus has not quarantined it
 **Status says `Cooling down`**
 
 The configured temperature limit was reached. PearlPilot waits until the hottest selected GPU is 10°C cooler before resuming.
-
-**Power profiles ask for administrator approval**
-
-NVIDIA requires elevated permission to change the hardware power limit. Canceling the prompt prevents reduced-power mining from starting. Stopping the profile prompts again so PearlPilot can restore the exact previous limit.
 
 **A pool share is accepted but no payout appears**
 

@@ -95,14 +95,6 @@ Test-Case 'WildRig arguments contain only the lean managed configuration' {
     Assert-True ($arguments -match '--gpu-temp-limit 82')
 }
 
-Test-Case 'Power profiles adapt to the GPU supported range' {
-    $expected = @{ 25 = 400; 50 = 400; 75 = 431; 100 = 575 }
-    foreach ($percent in @(25, 50, 75, 100)) {
-        $target = Get-PPPowerLimitTarget -DefaultLimitW 575 -MinimumLimitW 400 -MaximumLimitW 575 -Percent $percent
-        Assert-True ($target -eq $expected[$percent]) "Expected $($expected[$percent]) W for $percent%; received $target W."
-    }
-}
-
 Test-Case 'Configuration accepts a safe worker and GPU list' {
     $validation = Test-PPConfiguration -Configuration $configuration -AllowMissingMiner -AllowMissingTelemetry
     Assert-True $validation.Valid ($validation.Errors -join '; ')
