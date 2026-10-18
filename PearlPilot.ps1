@@ -28,6 +28,8 @@ $script:crashTimes = @()
 $script:blockedForCurrentLock = $false
 
 function Show-PPSettings {
+    param([Parameter(Mandatory=$true)][string]$AppRoot)
+
     $form = New-Object Windows.Forms.Form
     $form.Text = 'PearlPilot Settings'
     $form.Width = 620
@@ -152,7 +154,7 @@ function Show-PPSettings {
             if (-not $validation.Valid) { throw ($validation.Errors -join "`n") }
 
             Save-PPConfiguration -Configuration $candidate
-            if ($candidate.StartWithWindows) { Enable-PPStartup -AppRoot $appRoot } else { Disable-PPStartup }
+            if ($candidate.StartWithWindows) { Enable-PPStartup -AppRoot $AppRoot } else { Disable-PPStartup }
             $script:configuration = $candidate
             $form.Tag = $true
             $form.Close()
@@ -242,7 +244,7 @@ $mutex = New-Object Threading.Mutex($true, "Local\PearlPilot-$sid", [ref]$create
 if (-not $created) { exit 0 }
 
 if ($Setup -or -not [bool]$configuration.Configured) {
-    if (-not (Show-PPSettings)) {
+    if (-not (Show-PPSettings -AppRoot $appRoot)) {
         $mutex.ReleaseMutex()
         $mutex.Dispose()
         exit 0
@@ -271,7 +273,7 @@ $automaticItem.Add_Click({
 
 $settingsItem = New-Object Windows.Forms.ToolStripMenuItem 'Settings…'
 $settingsItem.Add_Click({
-    if (Show-PPSettings) {
+    if (Show-PPSettings -AppRoot $appRoot) {
         Stop-PPManagedMiner -Reason 'Settings changed'
         $script:lockedSinceUtc = if ($sessionState -eq 'Locked') { [DateTime]::UtcNow } else { $null }
         $automaticItem.Checked = [bool]$configuration.AutomaticMining
