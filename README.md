@@ -18,6 +18,8 @@
 
 PearlPilot runs as the signed-in user, supervises exactly one WildRig process, and stays out of the way until it has something useful to report. Automatic mode mines only after Windows has remained locked for the configured delay. Manual mode bypasses the lock requirement, but never bypasses temperature, telemetry, ownership, duplicate-process, or crash-loop protections.
 
+> **Bring your own miner:** PearlPilot does not download, bundle, install, or update WildRig. Obtain and verify WildRig separately, then select its executable during setup.
+
 ## Why PearlPilot
 
 - **Tiny surface area:** one tray process, one PowerShell module, one JSON settings file.
