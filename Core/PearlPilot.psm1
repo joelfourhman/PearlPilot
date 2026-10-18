@@ -20,6 +20,14 @@ function Get-PPWindowsPowerShellPath {
     $command.Source
 }
 
+function Get-PPWindowsScriptHostPath {
+    $path = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw 'Windows Script Host was not found.'
+    }
+    $path
+}
+
 function Get-PPConfiguration {
     param([Parameter(Mandatory=$true)][string]$DefaultsPath)
 
@@ -293,9 +301,12 @@ function Enable-PPStartup {
     param([Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string]$AppRoot)
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $scriptPath = Join-Path $AppRoot 'PearlPilot.ps1'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $scriptPath + '"'
-    $action = New-ScheduledTaskAction -Execute (Get-PPWindowsPowerShellPath) -Argument $arguments -WorkingDirectory $AppRoot
+    $launcherPath = Join-Path $AppRoot 'RunPearlPilot.vbs'
+    if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+        throw "PearlPilot is incomplete; missing $launcherPath"
+    }
+    $arguments = ConvertTo-PPQuotedArgument $launcherPath
+    $action = New-ScheduledTaskAction -Execute (Get-PPWindowsScriptHostPath) -Argument $arguments -WorkingDirectory $AppRoot
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet `
@@ -322,6 +333,7 @@ Export-ModuleMember -Function @(
     'Get-PPDataRoot',
     'Initialize-PPDataRoot',
     'Get-PPWindowsPowerShellPath',
+    'Get-PPWindowsScriptHostPath',
     'Get-PPConfiguration',
     'Save-PPConfiguration',
     'Write-PPLog',

@@ -120,6 +120,17 @@ Test-Case 'Windows PowerShell launcher is available' {
     Assert-True ([IO.Path]::GetFileName($path) -eq 'powershell.exe')
 }
 
+Test-Case 'Hidden launcher uses Windows Script Host without a visible window' {
+    $hostPath = Get-PPWindowsScriptHostPath
+    Assert-True (Test-Path -LiteralPath $hostPath -PathType Leaf)
+    Assert-True ([IO.Path]::GetFileName($hostPath) -eq 'wscript.exe')
+
+    $launcherPath = Join-Path $root 'RunPearlPilot.vbs'
+    Assert-True (Test-Path -LiteralPath $launcherPath -PathType Leaf)
+    $launcher = Get-Content -LiteralPath $launcherPath -Raw
+    Assert-True ($launcher -match 'shell\.Run\(command, 0, True\)')
+}
+
 Test-Case 'Duplicate process detection catches the configured executable' {
     $currentProcess = Get-Process -Id $PID
     Assert-True (Test-PPOtherMinerRunning -ExecutablePath $currentProcess.Path -OwnedProcessId $null)

@@ -25,7 +25,7 @@ PearlPilot runs as the signed-in user, supervises exactly one WildRig process, a
 - **Immediate control:** right-click **Mine now** / **Stop mining** without opening a terminal.
 - **Thermal hysteresis:** stop at the configured limit; resume only after cooling another 10°C.
 - **Exact ownership:** PID plus creation time prevents stopping an unrelated process.
-- **No elevation or service:** a limited per-user scheduled task starts the app after sign-in.
+- **No elevation or service:** a limited per-user scheduled task starts the app invisibly after sign-in.
 - **No secrets:** PearlPilot needs only a public `prl1...` payout address—never a seed phrase or private key.
 
 ## How it works
@@ -198,6 +198,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1 -DeleteU
 
 ```text
 PearlPilot.ps1          tray UI, settings, session events, supervision loop
+RunPearlPilot.vbs       console-free Windows launcher
 Core/PearlPilot.psm1    configuration, policy, miner, telemetry, startup helpers
 Config/defaults.json    conservative defaults
 Assets/                 oyster icon for Windows and this README
