@@ -1,0 +1,11 @@
+{
+  "Configured": false,
+  "WildRigPath": "",
+  "Wallet": "",
+  "WorkerName": "pearlpilot",
+  "GpuList": "0",
+  "LockDelayMinutes": 3,
+  "TemperatureLimitC": 82,
+  "AutomaticMining": true,
+  "StartWithWindows": true
+}
