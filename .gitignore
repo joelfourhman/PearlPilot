@@ -1,4 +1,5 @@
 Tests/.test-output/
+.local/
 *.tmp
 *.log
 Desktop.ini

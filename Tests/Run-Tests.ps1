@@ -95,6 +95,36 @@ Test-Case 'WildRig arguments contain only the lean managed configuration' {
     Assert-True ($arguments -match '--gpu-temp-limit 82')
 }
 
+Test-Case 'Configuration accepts a safe worker and GPU list' {
+    $validation = Test-PPConfiguration -Configuration $configuration -AllowMissingMiner -AllowMissingTelemetry
+    Assert-True $validation.Valid ($validation.Errors -join '; ')
+}
+
+Test-Case 'Configuration rejects unsafe worker names' {
+    $candidate = $configuration | ConvertTo-Json | ConvertFrom-Json
+    $candidate.WorkerName = 'worker name & command'
+    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingMiner -AllowMissingTelemetry
+    Assert-False $validation.Valid
+}
+
+Test-Case 'Configuration rejects malformed GPU lists' {
+    $candidate = $configuration | ConvertTo-Json | ConvertFrom-Json
+    $candidate.GpuList = '0, one'
+    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingMiner -AllowMissingTelemetry
+    Assert-False $validation.Valid
+}
+
+Test-Case 'Windows PowerShell launcher is available' {
+    $path = Get-PPWindowsPowerShellPath
+    Assert-True (Test-Path -LiteralPath $path -PathType Leaf)
+    Assert-True ([IO.Path]::GetFileName($path) -eq 'powershell.exe')
+}
+
+Test-Case 'Duplicate process detection catches the configured executable' {
+    $currentProcess = Get-Process -Id $PID
+    Assert-True (Test-PPOtherMinerRunning -ExecutablePath $currentProcess.Path -OwnedProcessId $null)
+}
+
 Test-Case 'Mock miner lifecycle uses exact process ownership' {
     $output = Join-Path $testRoot '.test-output'
     if (-not (Test-Path -LiteralPath $output)) { [void](New-Item -ItemType Directory -Path $output) }
@@ -131,6 +161,19 @@ Test-Case 'Tray icon is a valid Windows icon' {
     } finally {
         $icon.Dispose()
     }
+}
+
+Test-Case 'User documentation is consolidated in README' {
+    $documents = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.md' | Where-Object {
+        $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.FullName -notmatch '[\\/]\.local[\\/]'
+    })
+    Assert-True ($documents.Count -eq 1) "Expected one Markdown document; found $($documents.Count)."
+    Assert-True ($documents[0].Name -eq 'README.md')
+}
+
+Test-Case 'Local tools and miner binaries stay outside Git' {
+    $ignore = Get-Content -LiteralPath (Join-Path $root '.gitignore')
+    Assert-True ($ignore -contains '.local/')
 }
 
 Write-Host ''

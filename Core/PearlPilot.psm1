@@ -7,11 +7,17 @@ function Get-PPDataRoot {
 function Initialize-PPDataRoot {
     $root = Get-PPDataRoot
     foreach ($directory in @($root, (Join-Path $root 'Logs'), (Join-Path $root 'Runtime'))) {
-        if (-not (Test-Path -LiteralPath $directory)) {
-            [void](New-Item -ItemType Directory -Path $directory)
-        }
+        [void](New-Item -ItemType Directory -Path $directory -Force)
     }
     $root
+}
+
+function Get-PPWindowsPowerShellPath {
+    $command = Get-Command powershell.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    if (-not $command.Source -or -not (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+        throw 'Windows PowerShell 5.1 was not found.'
+    }
+    $command.Source
 }
 
 function Get-PPConfiguration {
@@ -79,6 +85,12 @@ function Test-PPConfiguration {
     }
     if ([string]$Configuration.Wallet -notmatch '^prl1[0-9a-z]{20,}$') {
         $errors += 'Enter a valid-looking public PRL wallet beginning with prl1.'
+    }
+    if ([string]$Configuration.WorkerName -notmatch '^[A-Za-z0-9._-]{1,32}$') {
+        $errors += 'Worker name must be 1-32 letters, numbers, dots, underscores, or hyphens.'
+    }
+    if ([string]$Configuration.GpuList -notmatch '^\d+(,\d+)*$') {
+        $errors += 'GPU index must be one or more comma-separated numbers.'
     }
     if ([int]$Configuration.LockDelayMinutes -lt 0 -or [int]$Configuration.LockDelayMinutes -gt 60) {
         $errors += 'The lock delay must be between 0 and 60 minutes.'
@@ -178,7 +190,7 @@ function Start-PPMiner {
 
     $start = New-Object Diagnostics.ProcessStartInfo
     if ($MockMinerPath) {
-        $start.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+        $start.FileName = Get-PPWindowsPowerShellPath
         $mockPath = ConvertTo-PPQuotedArgument $MockMinerPath
         $mockLog = ConvertTo-PPQuotedArgument $LogPath
         $start.Arguments = "-NoProfile -ExecutionPolicy Bypass -File $mockPath -LogPath $mockLog"
@@ -224,11 +236,13 @@ function Test-PPOtherMinerRunning {
     param([string]$ExecutablePath, [Nullable[int]]$OwnedProcessId)
     if (-not $ExecutablePath) { return $false }
     $expected = [IO.Path]::GetFullPath($ExecutablePath)
+    $expectedName = [IO.Path]::GetFileNameWithoutExtension($expected)
     foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
         if ($OwnedProcessId -and $process.Id -eq $OwnedProcessId.Value) { continue }
         try {
             if ($process.Path -and [IO.Path]::GetFullPath($process.Path) -eq $expected) { return $true }
         } catch { }
+        if ($process.ProcessName -eq $expectedName) { return $true }
     }
     $false
 }
@@ -270,12 +284,12 @@ function Get-PPStartupTaskName {
 }
 
 function Enable-PPStartup {
-    param([Parameter(Mandatory=$true)][string]$AppRoot)
+    param([Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string]$AppRoot)
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $scriptPath = Join-Path $AppRoot 'PearlPilot.ps1'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $scriptPath + '"'
-    $action = New-ScheduledTaskAction -Execute (Join-Path $PSHOME 'powershell.exe') -Argument $arguments -WorkingDirectory $AppRoot
+    $action = New-ScheduledTaskAction -Execute (Get-PPWindowsPowerShellPath) -Argument $arguments -WorkingDirectory $AppRoot
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet `
@@ -301,6 +315,7 @@ function Disable-PPStartup {
 Export-ModuleMember -Function @(
     'Get-PPDataRoot',
     'Initialize-PPDataRoot',
+    'Get-PPWindowsPowerShellPath',
     'Get-PPConfiguration',
     'Save-PPConfiguration',
     'Write-PPLog',

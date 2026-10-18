@@ -44,7 +44,7 @@ function Show-PPSettings {
     $form.Font = New-Object Drawing.Font('Segoe UI', 9)
 
     $title = New-Object Windows.Forms.Label
-    $title.Text = 'Lock → wait → mine. Unlock → stop.'
+    $title.Text = 'Lock → wait → mine. Or choose Mine now.'
     $title.Left = 24
     $title.Top = 20
     $title.Width = 540
@@ -117,7 +117,7 @@ function Show-PPSettings {
     $form.Controls.Add($startup)
 
     $note = New-Object Windows.Forms.Label
-    $note.Text = 'PearlPilot refuses to mine if it cannot read the lock state or NVIDIA temperature.'
+    $note.Text = 'Automatic mining needs a known lock state. All mining needs NVIDIA temperature.'
     $note.Left = 24
     $note.Top = $top + 58
     $note.Width = 530
@@ -168,6 +168,14 @@ function Show-PPSettings {
 
     [void]$form.ShowDialog()
     [bool]$form.Tag
+}
+
+function Show-PPTrayError {
+    param([Parameter(Mandatory=$true)][string]$Action, [Parameter(Mandatory=$true)][Exception]$Exception)
+
+    $message = "$Action failed: $($Exception.Message)"
+    try { Write-PPLog $message } catch { }
+    [void][Windows.Forms.MessageBox]::Show($message, 'PearlPilot', 'OK', 'Error')
 }
 
 function Save-PPMinerMarker {
@@ -267,37 +275,58 @@ $statusItem.Enabled = $false
 
 $mineNowItem = New-Object Windows.Forms.ToolStripMenuItem 'Mine now'
 $mineNowItem.Add_Click({
-    $script:manualMining = -not $manualMining
-    $mineNowItem.Text = if ($manualMining) { 'Stop mining' } else { 'Mine now' }
-    $script:blockedForCurrentLock = $false
-    $script:crashTimes = @()
-    $script:nextStartUtc = [DateTime]::MinValue
-    Write-PPLog $(if ($manualMining) { 'Manual mining enabled.' } else { 'Manual mining disabled.' })
-    if (-not $manualMining) { Stop-PPManagedMiner -Reason 'Stopped manually' }
+    try {
+        $script:manualMining = -not $manualMining
+        $mineNowItem.Text = if ($manualMining) { 'Stop mining' } else { 'Mine now' }
+        $script:blockedForCurrentLock = $false
+        $script:crashTimes = @()
+        $script:nextStartUtc = [DateTime]::MinValue
+        Write-PPLog $(if ($manualMining) { 'Manual mining enabled.' } else { 'Manual mining disabled.' })
+        if (-not $manualMining) { Stop-PPManagedMiner -Reason 'Stopped manually' }
+    } catch {
+        Show-PPTrayError -Action 'Manual mining' -Exception $_.Exception
+    }
 })
 [void]$menu.Items.Add($mineNowItem)
 
 $automaticItem = New-Object Windows.Forms.ToolStripMenuItem 'Automatic mining'
 $automaticItem.Checked = [bool]$configuration.AutomaticMining
 $automaticItem.Add_Click({
-    $script:configuration.AutomaticMining = -not [bool]$configuration.AutomaticMining
-    $automaticItem.Checked = [bool]$configuration.AutomaticMining
-    Save-PPConfiguration -Configuration $configuration
+    $previous = [bool]$configuration.AutomaticMining
+    try {
+        $script:configuration.AutomaticMining = -not $previous
+        Save-PPConfiguration -Configuration $configuration
+        $automaticItem.Checked = [bool]$configuration.AutomaticMining
+    } catch {
+        $script:configuration.AutomaticMining = $previous
+        $automaticItem.Checked = $previous
+        Show-PPTrayError -Action 'Saving automatic-mining preference' -Exception $_.Exception
+    }
 })
 [void]$menu.Items.Add($automaticItem)
 
 $settingsItem = New-Object Windows.Forms.ToolStripMenuItem 'Settings…'
 $settingsItem.Add_Click({
-    if (Show-PPSettings -AppRoot $appRoot) {
-        Stop-PPManagedMiner -Reason 'Settings changed'
-        $script:lockedSinceUtc = if ($sessionState -eq 'Locked') { [DateTime]::UtcNow } else { $null }
-        $automaticItem.Checked = [bool]$configuration.AutomaticMining
+    try {
+        Stop-PPManagedMiner -Reason 'Settings opened'
+        if (Show-PPSettings -AppRoot $appRoot) {
+            $script:lockedSinceUtc = if ($sessionState -eq 'Locked') { [DateTime]::UtcNow } else { $null }
+            $automaticItem.Checked = [bool]$configuration.AutomaticMining
+        }
+    } catch {
+        Show-PPTrayError -Action 'Opening settings' -Exception $_.Exception
     }
 })
 [void]$menu.Items.Add($settingsItem)
 
 $logsItem = New-Object Windows.Forms.ToolStripMenuItem 'Open logs'
-$logsItem.Add_Click({ Start-Process explorer.exe -ArgumentList (Join-Path $dataRoot 'Logs') })
+$logsItem.Add_Click({
+    try {
+        Start-Process explorer.exe -ArgumentList (Join-Path $dataRoot 'Logs')
+    } catch {
+        Show-PPTrayError -Action 'Opening logs' -Exception $_.Exception
+    }
+})
 [void]$menu.Items.Add($logsItem)
 [void]$menu.Items.Add((New-Object Windows.Forms.ToolStripSeparator))
 
@@ -395,7 +424,7 @@ try {
             }
         }
 
-        $displayStatus = if ($running) { 'Mining' } else { [string]$decision.Status }
+        $displayStatus = if ($running -and $manualMining) { 'Manual mining' } elseif ($running) { 'Mining' } else { [string]$decision.Status }
         if ($temperatureC -ne $null) { $displayStatus += " · $temperatureC°C" }
         $statusItem.Text = 'Status: ' + $displayStatus
         $tip = 'PearlPilot: ' + $displayStatus

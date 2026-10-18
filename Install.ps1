@@ -12,8 +12,15 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 }
 
 $appRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$modulePath = Join-Path $appRoot 'Core\PearlPilot.psm1'
 $scriptPath = Join-Path $appRoot 'PearlPilot.ps1'
+foreach ($requiredPath in @($modulePath, $scriptPath, (Join-Path $appRoot 'Config\defaults.json'), (Join-Path $appRoot 'Assets\PearlPilot.ico'))) {
+    if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+        throw "PearlPilot is incomplete; missing $requiredPath"
+    }
+}
+Import-Module $modulePath -Force
 $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $scriptPath + '" -Setup'
-Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $arguments -WindowStyle Hidden
+Start-Process -FilePath (Get-PPWindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden
 
 Write-Host 'PearlPilot setup opened. Complete the short form to enable automatic startup.'
