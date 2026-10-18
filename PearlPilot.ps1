@@ -27,6 +27,7 @@ $script:lastReconcileUtc = [DateTime]::UtcNow
 $script:nextStartUtc = [DateTime]::MinValue
 $script:crashTimes = @()
 $script:blockedForCurrentLock = $false
+$script:manualMining = $false
 
 function Show-PPSettings {
     param([Parameter(Mandatory=$true)][string]$AppRoot)
@@ -264,6 +265,18 @@ $statusItem.Enabled = $false
 [void]$menu.Items.Add($statusItem)
 [void]$menu.Items.Add((New-Object Windows.Forms.ToolStripSeparator))
 
+$mineNowItem = New-Object Windows.Forms.ToolStripMenuItem 'Mine now'
+$mineNowItem.Add_Click({
+    $script:manualMining = -not $manualMining
+    $mineNowItem.Text = if ($manualMining) { 'Stop mining' } else { 'Mine now' }
+    $script:blockedForCurrentLock = $false
+    $script:crashTimes = @()
+    $script:nextStartUtc = [DateTime]::MinValue
+    Write-PPLog $(if ($manualMining) { 'Manual mining enabled.' } else { 'Manual mining disabled.' })
+    if (-not $manualMining) { Stop-PPManagedMiner -Reason 'Stopped manually' }
+})
+[void]$menu.Items.Add($mineNowItem)
+
 $automaticItem = New-Object Windows.Forms.ToolStripMenuItem 'Automatic mining'
 $automaticItem.Checked = [bool]$configuration.AutomaticMining
 $automaticItem.Add_Click({
@@ -349,6 +362,7 @@ try {
             -NowUtc $now `
             -DelayMinutes ([int]$configuration.LockDelayMinutes) `
             -AutomaticMining ([bool]$configuration.AutomaticMining) `
+            -ManualMining $manualMining `
             -TelemetryAvailable $telemetryAvailable `
             -ThermalSafe $thermalSafe
         if ($blockedForCurrentLock) {

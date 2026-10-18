@@ -112,10 +112,16 @@ function Get-PPMiningDecision {
         [DateTime]$NowUtc = [DateTime]::UtcNow,
         [int]$DelayMinutes = 3,
         [bool]$AutomaticMining = $true,
+        [bool]$ManualMining = $false,
         [bool]$TelemetryAvailable = $true,
         [bool]$ThermalSafe = $true
     )
 
+    if ($ManualMining) {
+        if (-not $TelemetryAvailable) { return [pscustomobject]@{ ShouldMine=$false; Status='GPU telemetry unavailable' } }
+        if (-not $ThermalSafe) { return [pscustomobject]@{ ShouldMine=$false; Status='Cooling down' } }
+        return [pscustomobject]@{ ShouldMine=$true; Status='Manual mining' }
+    }
     if (-not $AutomaticMining) { return [pscustomobject]@{ ShouldMine=$false; Status='Disabled' } }
     if (-not $TelemetryAvailable) { return [pscustomobject]@{ ShouldMine=$false; Status='GPU telemetry unavailable' } }
     if (-not $ThermalSafe) { return [pscustomobject]@{ ShouldMine=$false; Status='Cooling down' } }

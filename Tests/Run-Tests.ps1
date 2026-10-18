@@ -48,6 +48,22 @@ Test-Case 'A sustained lock permits mining' {
     Assert-True $decision.ShouldMine
 }
 
+Test-Case 'Manual mining overrides the unlocked state' {
+    $decision = Get-PPMiningDecision -SessionState Unlocked -LockedSinceUtc $null -NowUtc $now -AutomaticMining $false -ManualMining $true
+    Assert-True $decision.ShouldMine
+    Assert-True ($decision.Status -eq 'Manual mining')
+}
+
+Test-Case 'Manual mining still fails closed without telemetry' {
+    $decision = Get-PPMiningDecision -SessionState Unlocked -LockedSinceUtc $null -NowUtc $now -ManualMining $true -TelemetryAvailable $false
+    Assert-False $decision.ShouldMine
+}
+
+Test-Case 'Manual mining still obeys thermal protection' {
+    $decision = Get-PPMiningDecision -SessionState Unlocked -LockedSinceUtc $null -NowUtc $now -ManualMining $true -ThermalSafe $false
+    Assert-False $decision.ShouldMine
+}
+
 Test-Case 'Missing GPU telemetry fails closed' {
     $decision = Get-PPMiningDecision -SessionState Locked -LockedSinceUtc $now.AddMinutes(-3) -NowUtc $now -TelemetryAvailable $false
     Assert-False $decision.ShouldMine

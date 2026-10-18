@@ -4,9 +4,9 @@
 
 PearlPilot is a small Windows 11 tray app with one job:
 
-> Lock → wait three minutes → mine. Unlock → stop.
+> Lock → wait three minutes → mine. Unlock → stop. Or choose **Mine now** from the tray.
 
-It runs as the signed-in user, starts WildRig only when the session remains locked, and stops the exact process it owns as soon as Windows unlocks. Unknown lock state or missing NVIDIA temperature telemetry always prevents mining.
+It runs as the signed-in user, starts WildRig automatically only when the session remains locked, and stops the exact process it owns as soon as Windows unlocks. A deliberate **Mine now** override can mine while unlocked. Missing NVIDIA temperature telemetry always prevents mining.
 
 ## Install
 
@@ -33,6 +33,7 @@ PearlPilot stays out of the way. Its right-click menu contains:
 ```text
 Status: Locked · starts in 2:41 · 45°C
 ────────────────────────────────────
+Mine now
 Automatic mining ✓
 Settings…
 Open logs
@@ -40,7 +41,7 @@ Open logs
 Exit PearlPilot
 ```
 
-Double-click the icon to open Settings. Turning off **Automatic mining** stops an owned miner. Exiting PearlPilot also stops it.
+Choose **Mine now** to start while Windows is unlocked; it changes to **Stop mining** until manual mode is turned off. Double-click the icon to open Settings. Turning off **Automatic mining** stops lock-triggered mining. Exiting PearlPilot always stops its miner.
 
 ## Safety behavior
 
@@ -48,6 +49,7 @@ Double-click the icon to open Settings. Turning off **Automatic mining** stops a
 - The current session state is reconciled every 30 seconds in case an event was missed.
 - A working WinForms message pump keeps session events responsive.
 - NVIDIA temperature is checked every 10 seconds; unavailable telemetry fails closed.
+- Manual mining bypasses only the lock requirement; telemetry, temperature, duplicate-process, and crash-loop protections remain active.
 - Thermal shutdown remains latched until the GPU cools 10 °C below the configured limit.
 - PID plus process creation time prevents PearlPilot from stopping an unrelated process.
 - Duplicate WildRig instances are refused.
