@@ -145,7 +145,7 @@ function Get-PPMinerArguments {
         '--algo', 'pearlhash',
         '--url', 'pool.pearlhash.xyz:9000',
         '--user', [string]$Configuration.Wallet,
-        '--api-worker-id', [string]$Configuration.WorkerName,
+        '--worker', [string]$Configuration.WorkerName,
         '--gpu-list', [string]$Configuration.GpuList,
         '--gpu-temp-limit', [string]$Configuration.TemperatureLimitC,
         '--gpu-temp-resume', [string]$resumeTemperature,

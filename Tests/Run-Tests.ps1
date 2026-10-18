@@ -74,6 +74,8 @@ Test-Case 'WildRig arguments contain only the lean managed configuration' {
     $arguments = Get-PPMinerArguments -Configuration $configuration -LogPath 'miner.log'
     Assert-True ($arguments -match '--algo pearlhash')
     Assert-True ($arguments -match '--url pool\.pearlhash\.xyz:9000')
+    Assert-True ($arguments -match '--worker test')
+    Assert-False ($arguments -match '--api-worker-id')
     Assert-True ($arguments -match '--gpu-temp-limit 82')
 }
 
