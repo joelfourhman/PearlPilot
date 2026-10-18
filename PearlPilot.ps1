@@ -10,6 +10,7 @@ Add-Type -AssemblyName System.Drawing
 
 $dataRoot = Initialize-PPDataRoot
 $defaultsPath = Join-Path $appRoot 'Config\defaults.json'
+$iconPath = Join-Path $appRoot 'Assets\PearlPilot.ico'
 $markerPath = Join-Path $dataRoot 'Runtime\owned-miner.json'
 $minerLogPath = Join-Path $dataRoot 'Logs\WildRig.log'
 $script:configuration = Get-PPConfiguration -DefaultsPath $defaultsPath
@@ -252,7 +253,8 @@ if ($Setup -or -not [bool]$configuration.Configured) {
 }
 
 $notify = New-Object Windows.Forms.NotifyIcon
-$notify.Icon = [Drawing.SystemIcons]::Application
+$appIcon = New-Object Drawing.Icon($iconPath)
+$notify.Icon = $appIcon
 $notify.Text = 'PearlPilot: starting'
 $notify.Visible = $true
 
@@ -384,13 +386,6 @@ try {
         $statusItem.Text = 'Status: ' + $displayStatus
         $tip = 'PearlPilot: ' + $displayStatus
         $notify.Text = $tip.Substring(0, [Math]::Min(63, $tip.Length))
-        $notify.Icon = if ($running) {
-            [Drawing.SystemIcons]::Shield
-        } elseif (-not $thermalSafe -or -not $telemetryAvailable) {
-            [Drawing.SystemIcons]::Warning
-        } else {
-            [Drawing.SystemIcons]::Application
-        }
         Start-Sleep -Milliseconds 100
     }
 } catch {
@@ -402,6 +397,7 @@ try {
     Unregister-Event -SourceIdentifier 'PearlPilot.Power' -ErrorAction SilentlyContinue
     $notify.Visible = $false
     $notify.Dispose()
+    $appIcon.Dispose()
     try { $mutex.ReleaseMutex(); $mutex.Dispose() } catch { }
     Write-PPLog 'PearlPilot stopped.'
 }

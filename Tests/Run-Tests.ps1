@@ -102,6 +102,19 @@ Test-Case 'Startup task identity is stable and user scoped' {
     Assert-True ($first -like 'PearlPilot-S-*')
 }
 
+Test-Case 'Tray icon is a valid Windows icon' {
+    Add-Type -AssemblyName System.Drawing
+    $iconPath = Join-Path $root 'Assets\PearlPilot.ico'
+    Assert-True (Test-Path -LiteralPath $iconPath -PathType Leaf)
+    $icon = New-Object Drawing.Icon($iconPath)
+    try {
+        Assert-True ($icon.Width -ge 16)
+        Assert-True ($icon.Height -ge 16)
+    } finally {
+        $icon.Dispose()
+    }
+}
+
 Write-Host ''
 Write-Host "Result: $passed passed, $failed failed"
 if ($failed -gt 0) { exit 1 }
