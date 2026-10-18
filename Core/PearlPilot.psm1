@@ -220,16 +220,22 @@ function Test-PPOwnedProcess {
 
 function Stop-PPOwnedProcess {
     param([int]$ProcessId, [DateTime]$StartedUtc)
-    if (-not (Test-PPOwnedProcess -ProcessId $ProcessId -StartedUtc $StartedUtc)) { return }
+    if (-not (Test-PPOwnedProcess -ProcessId $ProcessId -StartedUtc $StartedUtc)) { return $false }
 
     try { (Get-Process -Id $ProcessId).CloseMainWindow() | Out-Null } catch { }
     try { Wait-Process -Id $ProcessId -Timeout 1 -ErrorAction SilentlyContinue } catch { }
-    if (-not (Test-PPOwnedProcess -ProcessId $ProcessId -StartedUtc $StartedUtc)) { return }
+    if (-not (Test-PPOwnedProcess -ProcessId $ProcessId -StartedUtc $StartedUtc)) { return $true }
 
     try { $allProcesses = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { $allProcesses = @() }
     $children = @($allProcesses | Where-Object { $_.ParentProcessId -eq $ProcessId } | ForEach-Object { [int]$_.ProcessId })
     foreach ($child in $children) { Stop-Process -Id $child -Force -ErrorAction SilentlyContinue }
-    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    $process.Kill()
+    if (-not $process.WaitForExit(5000)) {
+        throw "Process $ProcessId did not stop."
+    }
+    $process.Dispose()
+    $true
 }
 
 function Test-PPOtherMinerRunning {

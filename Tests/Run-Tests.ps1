@@ -134,7 +134,7 @@ Test-Case 'Mock miner lifecycle uses exact process ownership' {
         $process = Start-PPMiner -Configuration $configuration -LogPath $logPath -MockMinerPath (Join-Path $testRoot 'MockMiner.ps1')
         $started = $process.StartTime.ToUniversalTime()
         Assert-True (Test-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started)
-        Stop-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started
+        Assert-True (Stop-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started)
         Start-Sleep -Milliseconds 250
         Assert-False ([bool](Get-Process -Id $process.Id -ErrorAction SilentlyContinue))
     } finally {

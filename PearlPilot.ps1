@@ -208,7 +208,7 @@ function Start-PPManagedMiner {
 function Stop-PPManagedMiner {
     param([string]$Reason)
     if ($script:minerPid -and $script:minerStartedUtc) {
-        Stop-PPOwnedProcess -ProcessId $script:minerPid -StartedUtc $script:minerStartedUtc
+        [void](Stop-PPOwnedProcess -ProcessId $script:minerPid -StartedUtc $script:minerStartedUtc)
         Write-PPLog "Stopped WildRig: $Reason"
     }
     $script:minerPid = $null
