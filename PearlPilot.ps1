@@ -270,7 +270,7 @@ $automaticItem.Add_Click({
     $script:configuration.AutomaticMining = -not [bool]$configuration.AutomaticMining
     $automaticItem.Checked = [bool]$configuration.AutomaticMining
     Save-PPConfiguration -Configuration $configuration
-}.GetNewClosure())
+})
 [void]$menu.Items.Add($automaticItem)
 
 $settingsItem = New-Object Windows.Forms.ToolStripMenuItem 'Settings…'
@@ -280,11 +280,11 @@ $settingsItem.Add_Click({
         $script:lockedSinceUtc = if ($sessionState -eq 'Locked') { [DateTime]::UtcNow } else { $null }
         $automaticItem.Checked = [bool]$configuration.AutomaticMining
     }
-}.GetNewClosure())
+})
 [void]$menu.Items.Add($settingsItem)
 
 $logsItem = New-Object Windows.Forms.ToolStripMenuItem 'Open logs'
-$logsItem.Add_Click({ Start-Process explorer.exe -ArgumentList (Join-Path $dataRoot 'Logs') }.GetNewClosure())
+$logsItem.Add_Click({ Start-Process explorer.exe -ArgumentList (Join-Path $dataRoot 'Logs') })
 [void]$menu.Items.Add($logsItem)
 [void]$menu.Items.Add((New-Object Windows.Forms.ToolStripSeparator))
 
