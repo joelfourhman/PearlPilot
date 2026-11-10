@@ -15,6 +15,7 @@ PearlPilot is a Windows 11 tray app. It supervises Linux WildRig in Docker Deskt
 - Preserve thermal and session policy, atomic worker messages, Docker ownership checks, and the container lease. Limit cleanup to PearlPilot-owned resources.
 - Keep WildRig updates one click. Automatic updates are opt-in and run while mining is idle. Fetch official stable Linux assets and verify the published checksum when available. Keep downloaded miner code inside the restricted container.
 - Keep local settings, payout addresses, runtime logs, downloads, and generated artifacts out of commits. Keep fixtures sanitized.
+- Save PowerShell scripts and modules with a UTF-8 BOM for Windows PowerShell 5.1. Keep the Docker supervisor script on LF line endings.
 
 ## Verification
 
