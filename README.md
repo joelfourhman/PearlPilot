@@ -1,212 +1,165 @@
-<p align="center">
-  <img src="Assets/PearlPilot.png" alt="PearlPilot oyster and pearl" width="112">
-</p>
+# PearlPilot
 
-<h1 align="center">PearlPilot</h1>
+**Lock Windows. Wait. Mine PearlHash.**
 
-<p align="center">
-  A focused Windows 11 tray controller for safe, unattended Pearl mining with WildRig.
-</p>
+PearlPilot is a Windows tray app that builds and manages **Linux WildRig inside Docker**. It handles your payout address, mining policy, temperature protection, live statistics, updates and recovery. No Windows miner, private keys or manual Docker commands are required.
 
-<p align="center">
-  <a href="https://github.com/joelfourhman/PearlPilot/actions/workflows/ci.yml"><img src="https://github.com/joelfourhman/PearlPilot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Windows-11-0078D4" alt="Windows 11">
-  <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE" alt="Windows PowerShell 5.1">
-</p>
+[Get started](#get-started) · [Everyday use](#everyday-use) · [Updates](#updates-and-rollback) · [Security](#security-model) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
-> Lock → wait → mine. Unlock → stop. Or choose **Mine now** from the tray.
+## Get started
 
-PearlPilot runs as the signed-in user, supervises exactly one WildRig process, and stays out of the way until it has something useful to report. Automatic mode mines only after Windows has remained locked for the configured delay. Manual mode bypasses the lock requirement, but never bypasses temperature, telemetry, ownership, duplicate-process, or crash-loop protections.
+### Before you clone
 
-> **Bring your own miner:** PearlPilot does not download, bundle, install, or update WildRig. Obtain and verify WildRig separately, then select its executable during setup.
+You need:
 
-## Why PearlPilot
+- **Windows 11 x64**, Git and Windows PowerShell 5.1, which is included with Windows.
+- An **NVIDIA GPU** and a current Windows NVIDIA driver with working `nvidia-smi`.
+- **Docker Desktop**, running Linux containers with **Use the WSL 2 based engine** enabled. Start Docker Desktop before installing PearlPilot.
+- At least **2 GiB free** on the Windows data drive and in Docker storage, plus Internet access to GitHub, Docker Hub, Ubuntu packages and your mining pool.
+- A **public PRL payout address**. Never enter a private key or recovery phrase.
 
-- **Tiny surface area:** one tray process, one PowerShell module, one JSON settings file.
-- **Fail-safe defaults:** unknown lock state or missing NVIDIA telemetry prevents automatic mining.
-- **Immediate control:** right-click **Mine now** / **Stop mining** without opening a terminal.
-- **Thermal hysteresis:** stop at the configured limit; resume only after cooling another 10°C.
-- **Exact ownership:** PID plus creation time prevents stopping an unrelated process.
-- **No elevation or service:** a limited per-user scheduled task starts the app invisibly after sign-in.
-- **No secrets:** PearlPilot needs only a public `prl1...` payout address—never a seed phrase or private key.
+Docker GPU passthrough requires WSL2. If it is not already working, follow [Docker's Windows GPU guide](https://docs.docker.com/desktop/features/gpu/) and [NVIDIA's WSL guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html). Install drivers on Windows, not inside Docker Desktop's managed Linux distribution. AMD/Intel GPUs and a native Linux tray app are not supported.
 
-## How it works
+### Clone, install, enter your address
 
-```mermaid
-flowchart LR
-    U[Windows unlocked] --> I[Idle]
-    U -->|Mine now| M[Mining]
-    L[Windows locked] --> D[Lock delay]
-    D -->|Delay elapsed| M
-    M -->|Unlock in automatic mode| I
-    M -->|Stop mining| I
-    M -->|Temperature limit or lost telemetry| C[Stopped / cooling]
-    C -->|Telemetry healthy and 10°C cooler| M
-```
-
-PearlPilot launches WildRig with `pearlhash` against `pool.pearlhash.xyz:9000`. Pool selection is intentionally fixed: this keeps configuration and support simple and matches WildRig's bundled Pearl example.
-
-## Requirements
-
-- Windows 11
-- Windows PowerShell 5.1
-- An NVIDIA GPU supported by WildRig
-- A working `nvidia-smi.exe`
-- A [WildRig release](https://github.com/andru-kun/wildrig-multi/releases) downloaded from its official repository
-- A public PRL payout address beginning with `prl1`
-
-Mining software is frequently flagged by antivirus products. Download WildRig only from its official release page, verify its hash against publisher-provided information when available, and—if you accept the risk—allow only the exact file. Do not disable antivirus protection or add a broad folder exclusion.
-
-## Quick start
-
-1. Clone or download this repository to a stable location. PearlPilot runs in place, so do not move the folder after enabling startup.
-2. Download and verify WildRig separately.
-3. Run the installer from Windows PowerShell:
-
-   ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
-   ```
-
-4. Complete the short setup form and select **Save**.
-5. Right-click the oyster icon in the notification area to inspect status or choose **Mine now**.
-
-The setup form never asks for a password, recovery phrase, seed phrase, or private key. Many exchanges discourage direct pool payouts; check your exchange's current policy before using an exchange deposit address.
-
-## Configuration
-
-| Setting | Purpose | Default / validation |
-| --- | --- | --- |
-| WildRig executable | Exact miner binary PearlPilot may start | Must be an existing file |
-| Public PRL wallet | Pool payout destination | Must begin with `prl1` |
-| Worker name | Pool worker identifier | 1–32 letters, numbers, `.`, `_`, or `-` |
-| GPU index | NVIDIA device selection | Comma-separated numeric indices, such as `0` or `0,1` |
-| Wait after lock | Delay before automatic mining | `3` minutes; allowed range `0–60` |
-| Stop temperature | Mining cutoff | `82°C`; allowed range `50–95°C` |
-| Automatic mining | Enables lock-triggered mining | On |
-| Start when I sign in | Registers the per-user scheduled task | On |
-
-Settings are stored at `%LOCALAPPDATA%\PearlPilot\config.json`. The file contains the public payout address and operational preferences, but no wallet secrets.
-
-## Tray experience
-
-```text
-Status: Manual mining · 80°C
-────────────────────────────
-Stop mining
-Automatic mining ✓
-Settings…
-Open logs
-────────────────────────────
-Exit PearlPilot
-```
-
-- **Mine now** starts mining while Windows is unlocked and changes to **Stop mining**.
-- **Automatic mining** controls only the lock-triggered workflow.
-- **Settings…** stops the owned miner before opening the modal window, so supervision is never paused while the GPU continues mining.
-- **Open logs** opens the local log directory.
-- Double-clicking the oyster opens **Settings…**.
-- Exiting PearlPilot always stops the miner it owns.
-
-Manual mode is intentionally not persisted. After PearlPilot restarts, it returns to the configured automatic policy.
-
-## Safety model
-
-| Risk | PearlPilot behavior |
-| --- | --- |
-| Unlock event missed | Reconciles the active session state every 30 seconds |
-| Lock state unknown | Automatic mining fails closed |
-| NVIDIA telemetry unavailable | All mining stops |
-| GPU reaches temperature limit | Stops mining and latches cooling state |
-| Temperature oscillates near limit | Resumes only 10°C below the cutoff |
-| Another WildRig instance exists | Refuses to start a duplicate |
-| PID gets reused | Requires both PID and original process start time |
-| WildRig crashes | Retries after 10 seconds; blocks after repeated crashes |
-| Settings window is open | Stops the owned miner before showing the modal UI |
-| PearlPilot exits | Stops its owned WildRig process in cleanup |
-
-WildRig also receives the configured temperature limit and watchdog arguments. PearlPilot does not change GPU clocks, voltage, fan curves, or power limits. Mining can draw substantial power and generate significant heat; hardware tuning remains the operator's responsibility.
-
-## Data and logs
-
-PearlPilot keeps mutable state outside the repository:
-
-```text
-%LOCALAPPDATA%\PearlPilot\
-├── config.json
-├── Logs\
-│   ├── PearlPilot.log
-│   └── WildRig.log
-└── Runtime\
-    └── owned-miner.json
-```
-
-`owned-miner.json` records only the process ID and start time needed for safe reattachment and cleanup. Local tools, downloaded miners, and installers belong under `.local/`, which is ignored by Git.
-
-## Verification
-
-Run the dependency-free suite with Windows PowerShell 5.1:
+Run these commands in a regular, non-administrator PowerShell window:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-Tests.ps1
+git clone https://github.com/joelfourhman/PearlPilot.git
+cd PearlPilot
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 ```
 
-The suite covers automatic and manual policy, fail-closed telemetry, thermal behavior, argument construction, configuration validation, exact process ownership, cleanup, startup identity, icon integrity, and repository hygiene. CI also parses every PowerShell file before running the suite.
+The installer checks prerequisites, verifies and downloads the latest official stable Linux WildRig release, builds the image, validates GPU/CUDA access, and opens **Menu → Settings**. The first build can take several minutes.
 
-Before relying on unattended mining on a new PC, perform this physical smoke test:
+1. Enter your public payout address. Confirm your worker name and GPU index; the defaults suit a single GPU.
+2. Choose automatic mining and sign-in startup if wanted, then **Save**.
+3. Right-click the PearlPilot tray icon and choose **Mine now**, or let the automatic policy wait until Windows has been locked for three minutes.
 
-1. Confirm **Mine now** starts exactly one WildRig process and the pool reports accepted shares.
-2. Choose **Stop mining** and confirm GPU utilization returns to idle.
-3. Lock Windows, wait longer than the configured delay, then unlock and confirm mining stops.
-4. Open **Settings…** while mining and confirm WildRig stops before the window appears.
-5. Sign out and back in once to confirm the startup task restores the tray app.
+
+Existing installations keep their wallet, worker, policy and other preferences. **Exit a running PearlPilot before using `Install.ps1`**; the installer refuses to compete with its worker. You can also update through the tray as described below.
+
+## Everyday use
+
+Double-click **`RunPearlPilot.vbs`** to start the app without a console window. If you enabled sign-in startup, PearlPilot starts automatically for your Windows account.
+
+| Tray control | What it does |
+| --- | --- |
+| **Mine now / Stop mining** | Start a manual session, or stop and persist the stop choice |
+| **View backend details / Retry mining controller** | Appears when the controller reports a problem. Retry preserves your mining preferences |
+| **Automatic mining** | Enable or disable the lock/idle policy; re-enabling clears a saved manual stop |
+| **Open Menu** | Open live statistics, settings, backend controls and diagnostics, and logs in one window |
+| **Exit PearlPilot** | Stop the owned miner and exit the tray app |
+
+**Menu** opens on **Overview**, which shows live mining and GPU data. The **Settings** and **Backend** pages pause mining. **Logs** shows recent PearlPilot and WildRig messages and can open the log folder.
+
+Normal startup reevaluates automatic policy; it does not restore a manual mining session. A manual stop survives restarts. To explicitly start manually from a terminal:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\PearlPilot.ps1 -MineNow
+```
+
+### Mining policy and settings
+
+| Setting | Default and behavior |
+| --- | --- |
+| Pool | `pool.pearlhash.xyz:9000`; accepts `host:port`, `stratum+tcp://host:port` or `stratum+ssl://host:port` |
+| Worker | `pearlpilot`; 1–32 letters, numbers, dots, underscores or hyphens |
+| GPU index | `0`; use comma-separated indices for multiple GPUs |
+| Wait after lock | 3 minutes; adjustable from 0–60 |
+| Stop temperature | 82 °C; mining resumes after cooling by 10 °C; adjustable from 50–95 °C |
+| Unlocked idle minutes | `0` disables idle mining; 1–120 allows mining after that much inactivity |
+| Pause for processes | Optional comma-separated game/GPU-app process names, with or without `.exe` |
+| Automatically update WildRig when idle | Off by default. Installs new stable releases when mining is idle |
+| PearlHash kernel / intensity | Kernel `2`, intensity automatic; blank uses WildRig's default; explicit intensity accepts 1–64 |
+
+Unlocking or activity stops automatic lock/idle mining. Manual mode overrides ordinary activity, while **temperature, missing telemetry, configured game processes and suspend stop both modes**. Every selected GPU must report a temperature. PearlPilot does not change clocks, voltage, fan settings or power limits.
+
+`MINING` means the container is running, doing recent positive work and connected to the pool. `STARTING` alone is not success. Share counters are reported separately, and a new image stays on functional probation until an accepted share arrives. Unknown or unavailable statistics remain unavailable; the 60-second average needs sufficient uptime.
+
+**Benchmark 2 × 60s** deliberately runs two pool sessions to compare WildRig defaults with your configured kernel/intensity, reporting hashrate, power and efficiency. Close its setup panel to cancel. No profile is applied automatically. On supported RTX architectures, WildRig itself always selects kernel 2, so those runs may show no kernel difference.
+
+## Updates and rollback
+
+Click the WildRig update notification, then select **Update** on **Menu → Backend**. **Check for updates** refreshes the available version. To opt in to background updates, enable **Automatically update WildRig when idle** under **Menu → Settings** and save.
+
+PearlPilot downloads the official stable Linux release, builds the Docker image, and runs compatibility checks before switching images. If the new image fails during mining, PearlPilot can restore the previous working image. You can also choose **Rollback** on the Backend page. To install a specific stable release from the command line, pass `-Version` to `Install.ps1`.
+
+## Security model
+
+The downloaded miner is treated as untrusted third-party native code:
+
+- Only the official **Linux x86_64** archive is accepted. PearlPilot checks the published checksum when GitHub supplies one. Extraction rejects unsafe paths, links, devices, duplicates, oversized archives and unsupported layouts.
+- **Image builds never execute WildRig or its bundled scripts.** Version/help validation happens afterward with no network, no GPU access, a non-root user, a read-only filesystem and the runtime limits. Timed-out helper containers are explicitly removed.
+- Mining runs as **UID 65532**, with all Linux capabilities dropped, no-new-privileges and Docker's default seccomp filtering. Miner files are root-owned/read-only; scratch space is bounded, non-executable tmpfs. CPU, memory/swap, process, core-dump and log limits apply.
+- No host directory, Docker socket or private credentials are mounted. The public payout address is passed at runtime, never baked into an image. The miner API is exposed only on an ephemeral **127.0.0.1** port.
+- Runtime references use the verified **immutable image ID**, with ownership/version/hash/security-policy checks. Docker cannot automatically restart mining. Windows/native fallback is disabled.
+- A serialized worker supervises parent identity, fresh policy, thermal safety and bounded recovery. Stop confirmation acknowledges the current intent. Benchmark requests expire and belong to one live setup panel. An operational 30-second lease stops ordinary unattended mining after controller loss.
+
+**Docker reduces exposure; it does not guarantee containment.** GPU passthrough exposes the host driver. Mining needs outbound networking, and this project does not implement a pool-only egress firewall: malicious code could contact reachable Internet, LAN or host services. The lease shares the miner's container user and is not a boundary against hostile code. Kernel, driver or runtime vulnerabilities remain relevant; a separate mining machine provides a stronger boundary.
+
+The Ubuntu LTS base, certificate bootstrap source and dated package snapshot are pinned. Rebuilding alone does **not** pick up new security fixes. Maintainers must deliberately update base digests/snapshot dates and retest. Keep Docker Desktop, WSL and the Windows NVIDIA driver updated through their supported mechanisms. PearlPilot does not replace or restart those host components.
+
+References: [official WildRig releases](https://github.com/andru-kun/wildrig-multi/releases), [Docker runtime controls](https://docs.docker.com/engine/containers/run/), [Docker security](https://docs.docker.com/engine/security/), [Ubuntu security notices](https://ubuntu.com/security/notices).
 
 ## Troubleshooting
 
-**The oyster icon is missing**
+| Symptom | Next step |
+| --- | --- |
+| Docker unavailable / commands time out | Start Docker Desktop, select Linux containers and enable its WSL2 engine. If Docker is unresponsive, restart Docker Desktop, then choose **Retry mining controller** in the tray. Restarting Docker interrupts other containers. |
+| GPU/CUDA check fails | Confirm host `nvidia-smi`, then run **Diagnostics**. Review the Windows NVIDIA driver and WSL GPU setup; `nvidia-smi` alone is not proof of CUDA initialization. |
+| Download checksum mismatch | Retry **Update** to fetch the official download again. |
+| Build fails | Open `%LOCALAPPDATA%\PearlPilot\Backend\last-build.log`. Check connectivity to Docker Hub, GitHub and the Ubuntu snapshot, plus Docker disk space. |
+| STARTING persists | Inspect pool/DNS connectivity, payout address, API errors and miner logs. No useful work for 120 seconds triggers bounded recovery. |
+| Repeated failures / ERROR | Correct the cause and choose **Retry**. Recovery backs off and stops after six failures; it never enables a native fallback. |
+| Cooling down / telemetry unavailable | Allow a 10 °C cooldown and verify temperatures for every configured GPU. The tray shows the pause reason; application log transitions include policy, GPU temperature and telemetry availability. |
+| Saved settings cannot be read | Back up and repair `%LOCALAPPDATA%\PearlPilot\config.json`, or move it aside to configure again. Invalid JSON is not silently overwritten. |
+| Exit code 139 during shutdown | This occurred with upstream 0.51.8 in testing. Cleanup is checked separately; an intentional stop does not trigger restart. |
 
-Open the notification-area overflow menu. Windows may place new tray icons there initially.
+Settings and runtime data live in **`%LOCALAPPDATA%\PearlPilot`**, outside your checkout. `config.json` holds preferences; `Logs` holds application/miner logs; `Backend` holds downloads, image records, diagnostics and benchmark results; `Runtime` holds worker IPC and recovery state. Unknown saved settings survive upgrades. Cleanup is limited to PearlPilot ownership labels and never globally prunes Docker resources.
 
-**Status says `GPU telemetry unavailable`**
+## Development
 
-Run `nvidia-smi.exe` in a terminal. PearlPilot will not mine until telemetry works for every selected GPU.
+There is no compiled Windows app, package manager, Python requirement or separately installed PowerShell module. The checkout contains everything except the host prerequisites and verified downloads.
 
-**WildRig does not start**
+```powershell
+# Same syntax, unit and worker-IPC checks as CI:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-Tests.ps1
 
-Confirm the configured executable still exists, antivirus has not quarantined it, and another copy is not already running. Then inspect `%LOCALAPPDATA%\PearlPilot\Logs\PearlPilot.log`.
+# Build and validate without opening Settings or starting mining:
+# Exit PearlPilot first when using the default per-user data directory.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1 -NoLaunch
 
-**Status says `Cooling down`**
+# Deliberate 60-second mining acceptance test; exit PearlPilot first:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Tests\Test-DockerBackend.ps1 -AuthorizeMining -Seconds 60
+```
 
-The configured temperature limit was reached. PearlPilot waits until the hottest selected GPU is 10°C cooler before resuming.
+For a completely separate, empty installation cache, use `Install.ps1 -NoLaunch -DataRoot <absolute-directory>`. This builds/validates without touching your regular installation or requiring a configured wallet. Custom data roots are build/validation targets; the tray uses its standard per-user directory.
 
-**A pool share is accepted but no payout appears**
+The mining smoke test requires positive work, GPU activity, a connected pool, an accepted share and confirmed cleanup. A short session may find no share and correctly remain unvalidated. Tests do not establish long-term stability or physical lock/sleep/sign-in behavior.
 
-Pool payout thresholds and exchange-crediting rules are external to PearlPilot. Review the pool and payout provider's current policies.
+| Path | Purpose |
+| --- | --- |
+| `Install.ps1`, `RunPearlPilot.vbs`, `Uninstall.ps1` | Install/update, hidden launch and removal |
+| `PearlPilot.ps1` | Tray UI, settings, statistics and host mining policy |
+| `Core/` | Configuration defaults, backend worker, menu and Docker build files |
+| `Assets/` | Windows tray and desktop shortcut icon |
+| `Tests/` | Regression fixtures, project checks and opt-in hardware smoke test |
+
+The installer stages the verified distribution for `Core/Docker/Dockerfile`. The CUDA probe compiles with warnings treated as errors. Production images omit the compiler and NVIDIA kernel drivers.
 
 ## Uninstall
 
-Remove startup registration and stop PearlPilot-owned processes while preserving settings and logs:
-
 ```powershell
+# Remove startup and owned runtime resources; keep preferences and logs:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1
-```
 
-To also remove `%LOCALAPPDATA%\PearlPilot`, request the destructive option explicitly:
-
-```powershell
+# Also delete per-user settings, logs and cached downloads:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1 -DeleteUserData
 ```
 
-## Project layout
+Use `-WhatIf` to preview either command. Unrelated Docker resources are left alone. The checkout itself is not deleted.
 
-```text
-PearlPilot.ps1          tray UI, settings, session events, supervision loop
-RunPearlPilot.vbs       console-free Windows launcher
-Core/PearlPilot.psm1    configuration, policy, miner, telemetry, startup helpers
-Config/defaults.json    conservative defaults
-Assets/                 oyster icon for Windows and this README
-Install.ps1             compatibility checks and first launch
-Uninstall.ps1           startup and owned-process cleanup
-Tests/                  dependency-free policy and lifecycle tests
-```
+## License
 
-This README is the project's single user-facing documentation source. The repository deliberately avoids generated documentation, duplicated setup guides, background services, package managers, and hidden tuning logic.
+PearlPilot is available under the [MIT License](LICENSE). The installer downloads WildRig separately from its upstream release.

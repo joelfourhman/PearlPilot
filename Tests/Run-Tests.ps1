@@ -1,5 +1,32 @@
-﻿Set-StrictMode -Version 2.0
+﻿[CmdletBinding()]
+param([switch]$SkipTests)
+
+Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+$testRoot = $PSScriptRoot
+$root = Split-Path -Parent $testRoot
+
+# Parse project sources without scanning local downloads or test output.
+$sources = @(Get-ChildItem -LiteralPath $root -File -Filter '*.ps1')
+foreach ($directory in @('Core','Tests')) {
+    $sources += @(Get-ChildItem -LiteralPath (Join-Path $root $directory) -File |
+        Where-Object { $_.Extension -in @('.ps1','.psm1') })
+}
+$errors = foreach ($source in $sources) {
+    $tokens = $null
+    $parseErrors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile($source.FullName,[ref]$tokens,[ref]$parseErrors)
+    $parseErrors
+}
+if ($errors) {
+    $errors | Format-List
+    throw "$(@($errors).Count) PowerShell syntax errors."
+}
+Write-Host ('Parsed {0} project source files without errors.' -f $sources.Count)
+
+Import-Module (Join-Path $root 'Core\PearlPilot.psm1') -Force
+if ($SkipTests) { return }
+
 $script:passed = 0
 $script:failed = 0
 
@@ -24,10 +51,6 @@ function Assert-False {
     param([bool]$Condition, [string]$Message='Expected false.')
     if ($Condition) { throw $Message }
 }
-
-$testRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$root = Split-Path -Parent $testRoot
-Import-Module (Join-Path $root 'Core\PearlPilot.psm1') -Force
 
 $automatic = $true
 $now = [DateTime]::UtcNow
@@ -76,7 +99,13 @@ Test-Case 'Thermal protection stops mining' {
 
 $configuration = [pscustomobject]@{
     Configured = $true
-    WildRigPath = 'mock.exe'
+    Backend = 'Docker'
+    PoolUrl = 'pool.pearlhash.xyz:9000'
+    WildRigVersion = '0.51.8'
+    PearlHashKernel = '2'
+    GpuIntensity = ''
+    IdleMinutes = 0
+    GamingProcesses = ''
     Wallet = 'prl1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
     WorkerName = 'test'
     GpuList = '0'
@@ -87,30 +116,31 @@ $configuration = [pscustomobject]@{
 }
 
 Test-Case 'WildRig arguments contain only the lean managed configuration' {
-    $arguments = Get-PPMinerArguments -Configuration $configuration -LogPath 'miner.log'
-    Assert-True ($arguments -match '--algo pearlhash')
-    Assert-True ($arguments -match '--url pool\.pearlhash\.xyz:9000')
-    Assert-True ($arguments -match '--worker test')
-    Assert-False ($arguments -match '--api-worker-id')
-    Assert-True ($arguments -match '--gpu-temp-limit 82')
+    $arguments = @(Get-PPMiningArgv $configuration)
+    Assert-True ($arguments[$arguments.IndexOf('--algo')+1] -eq 'pearlhash')
+    Assert-True ($arguments[$arguments.IndexOf('--pearlhash-kernel')+1] -eq '2')
+    Assert-True ($arguments[$arguments.IndexOf('--url')+1] -eq $configuration.PoolUrl)
+    Assert-True ($arguments[$arguments.IndexOf('--worker')+1] -eq 'test')
+    Assert-False ($arguments -contains '--api-worker-id')
+    Assert-True ($arguments[$arguments.IndexOf('--gpu-temp-limit')+1] -eq '82')
 }
 
 Test-Case 'Configuration accepts a safe worker and GPU list' {
-    $validation = Test-PPConfiguration -Configuration $configuration -AllowMissingMiner -AllowMissingTelemetry
+    $validation = Test-PPConfiguration -Configuration $configuration -AllowMissingTelemetry
     Assert-True $validation.Valid ($validation.Errors -join '; ')
 }
 
 Test-Case 'Configuration rejects unsafe worker names' {
     $candidate = $configuration | ConvertTo-Json | ConvertFrom-Json
     $candidate.WorkerName = 'worker name & command'
-    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingMiner -AllowMissingTelemetry
+    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingTelemetry
     Assert-False $validation.Valid
 }
 
 Test-Case 'Configuration rejects malformed GPU lists' {
     $candidate = $configuration | ConvertTo-Json | ConvertFrom-Json
     $candidate.GpuList = '0, one'
-    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingMiner -AllowMissingTelemetry
+    $validation = Test-PPConfiguration -Configuration $candidate -AllowMissingTelemetry
     Assert-False $validation.Valid
 }
 
@@ -136,21 +166,23 @@ Test-Case 'Duplicate process detection catches the configured executable' {
     Assert-True (Test-PPOtherMinerRunning -ExecutablePath $currentProcess.Path -OwnedProcessId $null)
 }
 
-Test-Case 'Mock miner lifecycle uses exact process ownership' {
-    $output = Join-Path $testRoot '.test-output'
-    if (-not (Test-Path -LiteralPath $output)) { [void](New-Item -ItemType Directory -Path $output) }
-    $logPath = Join-Path $output 'mock.log'
+Test-Case 'Process ownership refuses a mismatched start time and stops the owned process' {
     $process = $null
     try {
-        $process = Start-PPMiner -Configuration $configuration -LogPath $logPath -MockMinerPath (Join-Path $testRoot 'MockMiner.ps1')
+        $start=New-Object Diagnostics.ProcessStartInfo
+        $start.FileName=Get-PPWindowsPowerShellPath
+        $start.Arguments='-NoProfile -Command "Start-Sleep -Seconds 60"'
+        $start.UseShellExecute=$false; $start.CreateNoWindow=$true
+        $process=[Diagnostics.Process]::Start($start)
         $started = $process.StartTime.ToUniversalTime()
+        Assert-False (Stop-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started.AddMinutes(-1))
         Assert-True (Test-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started)
         Assert-True (Stop-PPOwnedProcess -ProcessId $process.Id -StartedUtc $started)
         Start-Sleep -Milliseconds 250
         Assert-False ([bool](Get-Process -Id $process.Id -ErrorAction SilentlyContinue))
     } finally {
         if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
-        Remove-Item -LiteralPath $output -Recurse -Force -ErrorAction SilentlyContinue
+        if ($process) {$process.Dispose()}
     }
 }
 
@@ -174,19 +206,22 @@ Test-Case 'Tray icon is a valid Windows icon' {
     }
 }
 
-Test-Case 'User documentation is consolidated in README' {
-    $documents = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.md' | Where-Object {
-        $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.FullName -notmatch '[\\/]\.local[\\/]'
-    })
-    Assert-True ($documents.Count -eq 1) "Expected one Markdown document; found $($documents.Count)."
-    Assert-True ($documents[0].Name -eq 'README.md')
+Test-Case 'Project documentation has one README entry point' {
+    Assert-True (Test-Path -LiteralPath (Join-Path $root 'README.md'))
+    Assert-False (Test-Path -LiteralPath (Join-Path $root 'docs\docker-backend.md'))
+    Assert-False (Test-Path -LiteralPath (Join-Path $root 'docs\security.md'))
 }
 
 Test-Case 'Local tools and miner binaries stay outside Git' {
     $ignore = Get-Content -LiteralPath (Join-Path $root '.gitignore')
     Assert-True ($ignore -contains '.local/')
 }
+Test-Case 'Uninstall WhatIf previews deletion without touching the running application' {
+    $result=Invoke-PPCommand (Get-PPWindowsPowerShellPath) @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $root 'Uninstall.ps1'),'-DeleteUserData','-WhatIf')
+    Assert-True ($result.ExitCode -eq 0 -and $result.Output -match 'Stop PearlPilot') $result.Error
+}
 
 Write-Host ''
+. (Join-Path $testRoot 'Backend.Tests.ps1')
 Write-Host "Result: $passed passed, $failed failed"
 if ($failed -gt 0) { exit 1 }

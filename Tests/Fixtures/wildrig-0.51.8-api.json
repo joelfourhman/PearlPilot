@@ -1,0 +1,80 @@
+{
+    "id": "",
+    "worker_id": "d24919e3662f",
+    "version": "0.51.8",
+    "kind": "opencl",
+    "ua": "WildRig/0.51.8L",
+    "algo": "pearlhash",
+    "donate_level": 0.0,
+    "uptime": 97,
+    "hashrate": {
+        "total": [
+            406063053507478,
+            408143876991906,
+            0
+        ],
+        "threads": [
+            [
+                406063053507478,
+                408143876991906,
+                0
+            ]
+        ]
+    },
+    "hwmon": {
+        "busID": [
+            1
+        ],
+        "temp": [
+            76
+        ],
+        "fan": [
+            56
+        ],
+        "power": [
+            514
+        ],
+        "cclk": [
+            2362
+        ],
+        "mclk": [
+            14001
+        ]
+    },
+    "results": {
+        "diff_current": 0,
+        "shares_good": 2,
+        "shares_accepted": [
+            2
+        ],
+        "shares_rejected": [
+            0
+        ],
+        "shares_ignored": [
+            0
+        ],
+        "shares_total": 2,
+        "avg_time": 48,
+        "hashes_total": 0,
+        "best": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "error_log": []
+    },
+    "connection": {
+        "pool": "pool.pearlhash.xyz:9000",
+        "uptime": 96,
+        "ping": 123,
+        "failures": 0,
+        "error_log": []
+    }
+}

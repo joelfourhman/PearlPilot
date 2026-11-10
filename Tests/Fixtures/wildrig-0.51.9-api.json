@@ -1,0 +1,84 @@
+﻿{
+    "id":  "",
+    "worker_id":  "0ae417923789",
+    "version":  "0.51.9",
+    "kind":  "opencl",
+    "ua":  "WildRig/0.51.9L",
+    "algo":  "pearlhash",
+    "donate_level":  0.0,
+    "uptime":  69,
+    "hashrate":  {
+                     "total":  [
+                                   406234207586933,
+                                   409922812913491,
+                                   0
+                               ],
+                     "threads":  [
+                                     [
+                                         406234207586933,
+                                         409922812913491,
+                                         0
+                                     ]
+                                 ]
+                 },
+    "hwmon":  {
+                  "busID":  [
+                                1
+                            ],
+                  "temp":  [
+                               73
+                           ],
+                  "fan":  [
+                              51
+                          ],
+                  "power":  [
+                                503
+                            ],
+                  "cclk":  [
+                               2407
+                           ],
+                  "mclk":  [
+                               14001
+                           ]
+              },
+    "results":  {
+                    "diff_current":  0,
+                    "shares_good":  1,
+                    "shares_accepted":  [
+                                            1
+                                        ],
+                    "shares_rejected":  [
+                                            0
+                                        ],
+                    "shares_ignored":  [
+                                           0
+                                       ],
+                    "shares_total":  1,
+                    "avg_time":  68,
+                    "hashes_total":  0,
+                    "best":  [
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0,
+                                 0
+                             ],
+                    "error_log":  [
+
+                                  ]
+                },
+    "connection":  {
+                       "pool":  "pool.pearlhash.xyz:9000",
+                       "uptime":  68,
+                       "ping":  100,
+                       "failures":  0,
+                       "error_log":  [
+
+                                     ]
+                   }
+}

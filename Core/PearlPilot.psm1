@@ -1,11 +1,14 @@
 ﻿Set-StrictMode -Version 2.0
 
+Import-Module (Join-Path $PSScriptRoot 'Backend.psm1') -Force
+
 function Get-PPDataRoot {
     Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PearlPilot'
 }
 
 function Initialize-PPDataRoot {
-    $root = Get-PPDataRoot
+    param([string]$DataRoot=(Get-PPDataRoot))
+    $root = [IO.Path]::GetFullPath($DataRoot)
     foreach ($directory in @($root, (Join-Path $root 'Logs'), (Join-Path $root 'Runtime'))) {
         [void](New-Item -ItemType Directory -Path $directory -Force)
     }
@@ -29,40 +32,55 @@ function Get-PPWindowsScriptHostPath {
 }
 
 function Get-PPConfiguration {
-    param([Parameter(Mandatory=$true)][string]$DefaultsPath)
+    param([string]$DataRoot=(Get-PPDataRoot))
 
-    $root = Initialize-PPDataRoot
+    $root = Initialize-PPDataRoot -DataRoot $DataRoot
     $configPath = Join-Path $root 'config.json'
-    $configuration = Get-Content -LiteralPath $DefaultsPath -Raw | ConvertFrom-Json
+    $configuration = [pscustomobject]@{
+        Configured = $false
+        Wallet = ''
+        WorkerName = 'pearlpilot'
+        GpuList = '0'
+        LockDelayMinutes = 3
+        TemperatureLimitC = 82
+        IdleMinutes = 0
+        GamingProcesses = ''
+        AutomaticMining = $true
+        AutomaticUpdates = $false
+        StartWithWindows = $true
+        PoolUrl = 'pool.pearlhash.xyz:9000'
+        PearlHashKernel = '2'
+        GpuIntensity = ''
+        UserStopped = $false
+    }
 
     if (Test-Path -LiteralPath $configPath) {
         try {
-            $saved = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-            foreach ($property in $configuration.PSObject.Properties.Name) {
-                if ($saved.PSObject.Properties[$property]) {
-                    $configuration.$property = $saved.$property
-                }
+            $saved = Read-PPJson $configPath
+            foreach ($property in $saved.PSObject.Properties.Name) {
+                $configuration | Add-Member NoteProperty $property $saved.$property -Force
             }
-        } catch { }
+        } catch { throw "Cannot read saved settings at $configPath. Repair or restore this file before starting PearlPilot. $($_.Exception.Message)" }
     }
 
+    # Migrate legacy Native/Auto preferences to the isolated backend. Preserve the
+    # old executable path for process detection, but never launch it.
+    $configuration | Add-Member NoteProperty Backend 'Docker' -Force
     $configuration
 }
 
 function Save-PPConfiguration {
-    param([Parameter(Mandatory=$true)]$Configuration)
+    param([Parameter(Mandatory=$true)]$Configuration, [string]$DataRoot=(Get-PPDataRoot))
 
-    $root = Initialize-PPDataRoot
+    $root = Initialize-PPDataRoot -DataRoot $DataRoot
     $path = Join-Path $root 'config.json'
-    $temporary = "$path.tmp"
-    $Configuration | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
-    Move-Item -LiteralPath $temporary -Destination $path -Force
+    Write-PPJson $path $Configuration
 }
 
 function Write-PPLog {
-    param([Parameter(Mandatory=$true)][string]$Message)
+    param([Parameter(Mandatory=$true)][string]$Message, [string]$DataRoot=(Get-PPDataRoot))
 
-    $path = Join-Path (Initialize-PPDataRoot) 'Logs\PearlPilot.log'
+    $path = Join-Path $DataRoot 'Logs\PearlPilot.log'
     if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 2MB) {
         Move-Item -LiteralPath $path -Destination "$path.old" -Force
     }
@@ -75,6 +93,7 @@ function Find-PPNvidiaSmi {
         $candidates += Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
     }
     $command = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+    if (-not $command) { $command=Get-Command nvidia-smi -ErrorAction SilentlyContinue }
     if ($command) { $candidates += $command.Source }
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
@@ -83,14 +102,10 @@ function Find-PPNvidiaSmi {
 }
 
 function Test-PPConfiguration {
-    param([Parameter(Mandatory=$true)]$Configuration, [switch]$AllowMissingMiner, [switch]$AllowMissingTelemetry)
+    param([Parameter(Mandatory=$true)]$Configuration, [switch]$AllowMissingTelemetry)
 
     $errors = @()
-    if (-not $Configuration.WildRigPath) {
-        $errors += 'Choose the WildRig executable.'
-    } elseif (-not $AllowMissingMiner -and -not (Test-Path -LiteralPath $Configuration.WildRigPath -PathType Leaf)) {
-        $errors += 'The WildRig executable was not found.'
-    }
+    # Installation readiness is diagnosed separately; no native binary is needed.
     if ([string]$Configuration.Wallet -notmatch '^prl1[0-9a-z]{20,}$') {
         $errors += 'Enter a valid-looking public PRL wallet beginning with prl1.'
     }
@@ -105,6 +120,12 @@ function Test-PPConfiguration {
     }
     if ([int]$Configuration.TemperatureLimitC -lt 50 -or [int]$Configuration.TemperatureLimitC -gt 95) {
         $errors += 'The temperature limit must be between 50 and 95 °C.'
+    }
+    if ($Configuration.PSObject.Properties['Backend']) {
+        if ($Configuration.Backend -notin @('Auto','Docker')) { $errors += 'Only the isolated Docker backend is supported.' }
+        if ([int]$Configuration.IdleMinutes -lt 0 -or [int]$Configuration.IdleMinutes -gt 120) { $errors += 'Idle minutes must be 0 (disabled) through 120.' }
+        if ($Configuration.GamingProcesses -and $Configuration.GamingProcesses -notmatch '^[A-Za-z0-9_. -]+(,[A-Za-z0-9_. -]+)*$') { $errors += 'Gaming processes must be comma-separated process names.' }
+        try { [void](Get-PPMiningArgv $Configuration) } catch { $errors += $_.Exception.Message }
     }
     if (-not $AllowMissingTelemetry -and -not (Find-PPNvidiaSmi)) {
         $errors += 'nvidia-smi.exe was not found; thermal safety cannot be enforced.'
@@ -134,9 +155,15 @@ function Get-PPMiningDecision {
         [bool]$AutomaticMining = $true,
         [bool]$ManualMining = $false,
         [bool]$TelemetryAvailable = $true,
-        [bool]$ThermalSafe = $true
+        [bool]$ThermalSafe = $true,
+        [int]$IdleMinutes = 0,
+        [double]$IdleSeconds = 0,
+        [bool]$WorkloadBlocked = $false,
+        [bool]$Suspended = $false
     )
 
+    if ($Suspended) { return [pscustomobject]@{ ShouldMine=$false; Status='Windows suspended' } }
+    if ($WorkloadBlocked) { return [pscustomobject]@{ ShouldMine=$false; Status='Gaming / configured GPU application active' } }
     if ($ManualMining) {
         if (-not $TelemetryAvailable) { return [pscustomobject]@{ ShouldMine=$false; Status='GPU telemetry unavailable' } }
         if (-not $ThermalSafe) { return [pscustomobject]@{ ShouldMine=$false; Status='Cooling down' } }
@@ -146,7 +173,10 @@ function Get-PPMiningDecision {
     if (-not $TelemetryAvailable) { return [pscustomobject]@{ ShouldMine=$false; Status='GPU telemetry unavailable' } }
     if (-not $ThermalSafe) { return [pscustomobject]@{ ShouldMine=$false; Status='Cooling down' } }
     if ($SessionState -eq 'Unknown') { return [pscustomobject]@{ ShouldMine=$false; Status='Session state unknown' } }
-    if ($SessionState -eq 'Unlocked') { return [pscustomobject]@{ ShouldMine=$false; Status='Idle' } }
+    if ($SessionState -eq 'Unlocked') {
+        if ($IdleMinutes -gt 0 -and $IdleSeconds -ge $IdleMinutes*60) { return [pscustomobject]@{ ShouldMine=$true; Status='Idle policy mining' } }
+        return [pscustomobject]@{ ShouldMine=$false; Status='Idle' }
+    }
     if ($null -eq $LockedSinceUtc) { return [pscustomobject]@{ ShouldMine=$false; Status='Waiting for lock time' } }
 
     $remaining = [Math]::Ceiling(($LockedSinceUtc.ToUniversalTime().AddMinutes($DelayMinutes) - $NowUtc.ToUniversalTime()).TotalSeconds)
@@ -155,66 +185,6 @@ function Get-PPMiningDecision {
         return [pscustomobject]@{ ShouldMine=$false; Status=$countdown }
     }
     [pscustomobject]@{ ShouldMine=$true; Status='Mining' }
-}
-
-function ConvertTo-PPQuotedArgument {
-    param([string]$Value)
-    if ($Value -notmatch '[\s"]') { return $Value }
-    '"' + ($Value -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
-}
-
-function Get-PPMinerArguments {
-    param([Parameter(Mandatory=$true)]$Configuration, [Parameter(Mandatory=$true)][string]$LogPath)
-
-    $resumeTemperature = [Math]::Max(40, [int]$Configuration.TemperatureLimitC - 10)
-    $arguments = @(
-        '--algo', 'pearlhash',
-        '--url', 'pool.pearlhash.xyz:9000',
-        '--user', [string]$Configuration.Wallet,
-        '--worker', [string]$Configuration.WorkerName,
-        '--gpu-list', [string]$Configuration.GpuList,
-        '--gpu-temp-limit', [string]$Configuration.TemperatureLimitC,
-        '--gpu-temp-resume', [string]$resumeTemperature,
-        '--watchdog',
-        '--print-time', '10',
-        '--no-color',
-        '--log-file', $LogPath
-    )
-    (@($arguments | ForEach-Object { ConvertTo-PPQuotedArgument ([string]$_) }) -join ' ')
-}
-
-function Start-PPMiner {
-    param(
-        [Parameter(Mandatory=$true)]$Configuration,
-        [Parameter(Mandatory=$true)][string]$LogPath,
-        [string]$MockMinerPath
-    )
-
-    $validation = Test-PPConfiguration `
-        -Configuration $Configuration `
-        -AllowMissingMiner:([bool]$MockMinerPath) `
-        -AllowMissingTelemetry:([bool]$MockMinerPath)
-    if (-not $validation.Valid) { throw ($validation.Errors -join ' ') }
-
-    $start = New-Object Diagnostics.ProcessStartInfo
-    if ($MockMinerPath) {
-        $start.FileName = Get-PPWindowsPowerShellPath
-        $mockPath = ConvertTo-PPQuotedArgument $MockMinerPath
-        $mockLog = ConvertTo-PPQuotedArgument $LogPath
-        $start.Arguments = "-NoProfile -ExecutionPolicy Bypass -File $mockPath -LogPath $mockLog"
-    } else {
-        $start.FileName = [string]$Configuration.WildRigPath
-        $start.Arguments = Get-PPMinerArguments -Configuration $Configuration -LogPath $LogPath
-    }
-    $start.WorkingDirectory = Split-Path -Parent $start.FileName
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
-
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = $start
-    if (-not $process.Start()) { throw 'WildRig did not start.' }
-    $process
 }
 
 function Test-PPOwnedProcess {
@@ -234,9 +204,6 @@ function Stop-PPOwnedProcess {
     try { Wait-Process -Id $ProcessId -Timeout 1 -ErrorAction SilentlyContinue } catch { }
     if (-not (Test-PPOwnedProcess -ProcessId $ProcessId -StartedUtc $StartedUtc)) { return $true }
 
-    try { $allProcesses = @(Get-CimInstance Win32_Process -ErrorAction Stop) } catch { $allProcesses = @() }
-    $children = @($allProcesses | Where-Object { $_.ParentProcessId -eq $ProcessId } | ForEach-Object { [int]$_.ProcessId })
-    foreach ($child in $children) { Stop-Process -Id $child -Force -ErrorAction SilentlyContinue }
     $process = Get-Process -Id $ProcessId -ErrorAction Stop
     $process.Kill()
     if (-not $process.WaitForExit(5000)) {
@@ -244,6 +211,16 @@ function Stop-PPOwnedProcess {
     }
     $process.Dispose()
     $true
+}
+
+# Compatibility cleanup only; no native process can be launched by PearlPilot.
+function Stop-PPLegacyMiner {
+    param([string]$DataRoot)
+    $marker=Join-Path $DataRoot 'Runtime\owned-miner.json'
+    if (-not (Test-Path -LiteralPath $marker)) {return}
+    $owned=Read-PPJson $marker
+    [void](Stop-PPOwnedProcess -ProcessId ([int]$owned.ProcessId) -StartedUtc ([DateTime]::Parse($owned.StartedUtc)))
+    Remove-Item -LiteralPath $marker -Force
 }
 
 function Test-PPOtherMinerRunning {
@@ -267,29 +244,57 @@ function Get-PPGpuTemperature {
     $path = Find-PPNvidiaSmi
     if (-not $path) { return [pscustomobject]@{ Available=$false; TemperatureC=$null } }
     try {
-        $start = New-Object Diagnostics.ProcessStartInfo
-        $start.FileName = $path
-        $start.Arguments = '--query-gpu=index,temperature.gpu --format=csv,noheader,nounits'
-        $start.UseShellExecute = $false
-        $start.CreateNoWindow = $true
-        $start.RedirectStandardOutput = $true
-        $process = [Diagnostics.Process]::Start($start)
-        if (-not $process.WaitForExit(5000)) { $process.Kill(); throw 'nvidia-smi timed out.' }
-
+        $result = Invoke-PPCommand $path @('--query-gpu=index,name,driver_version,temperature.gpu,utilization.gpu,power.draw','--format=csv,noheader,nounits') 5
+        if ($result.ExitCode -ne 0) { throw 'nvidia-smi failed.' }
         $selected = @($GpuList -split ',' | ForEach-Object { $_.Trim() })
         $temperatures = @()
-        foreach ($line in @($process.StandardOutput.ReadToEnd() -split "`r?`n")) {
+        $gpus = @()
+        foreach ($line in @($result.Output -split "`r?`n")) {
             $parts = @($line -split ',' | ForEach-Object { $_.Trim() })
-            if ($parts.Count -eq 2 -and $selected -contains $parts[0]) {
-                $value = 0
-                if ([int]::TryParse($parts[1], [ref]$value)) { $temperatures += $value }
+            if ($parts.Count -eq 6 -and $selected -contains $parts[0]) {
+                $value = 0.0
+                if ([double]::TryParse($parts[3],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$value)) { $temperatures += $value }
+                $util=$null; $power=$null; $parsed=0.0
+                if ([double]::TryParse($parts[4],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$parsed)) { $util=$parsed }
+                if ([double]::TryParse($parts[5],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$parsed)) { $power=$parsed }
+                $gpus += [pscustomobject]@{ Index=$parts[0]; Name=$parts[1]; Driver=$parts[2]; Utilization=$util; PowerWatts=$power }
             }
         }
-        if (-not $temperatures.Count) { throw 'The configured GPU was not returned.' }
-        [pscustomobject]@{ Available=$true; TemperatureC=($temperatures | Measure-Object -Maximum).Maximum }
+        if ($temperatures.Count -ne $selected.Count) { throw 'Temperature unavailable for one or more configured GPUs.' }
+        [pscustomobject]@{ Available=$true; TemperatureC=($temperatures | Measure-Object -Maximum).Maximum; Gpus=$gpus }
     } catch {
         [pscustomobject]@{ Available=$false; TemperatureC=$null }
     }
+}
+
+function Get-PPIdleSeconds {
+    if (-not ('PearlPilot.Input' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace PearlPilot {
+ public static class Input {
+  [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint size; public uint time; }
+  [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+  public static double Idle() {
+   var info = new LASTINPUTINFO(); info.size = (uint)Marshal.SizeOf(info);
+   if (!GetLastInputInfo(ref info)) return 0;
+   return unchecked((uint)Environment.TickCount - info.time) / 1000.0;
+  }
+ }
+}
+'@
+    }
+    [PearlPilot.Input]::Idle()
+}
+
+function Test-PPGamingProcess {
+    param([string]$Names)
+    foreach ($name in @($Names -split ',')) {
+        $trimmed = $name.Trim() -replace '\.exe$',''
+        if ($trimmed -and (Get-Process -Name $trimmed -ErrorAction SilentlyContinue)) { return $true }
+    }
+    $false
 }
 
 function Get-PPStartupTaskName {
@@ -305,7 +310,7 @@ function Enable-PPStartup {
     if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
         throw "PearlPilot is incomplete; missing $launcherPath"
     }
-    $arguments = ConvertTo-PPQuotedArgument $launcherPath
+    $arguments = ConvertTo-PPArgument $launcherPath
     $action = New-ScheduledTaskAction -Execute (Get-PPWindowsScriptHostPath) -Argument $arguments -WorkingDirectory $AppRoot
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
@@ -329,25 +334,4 @@ function Disable-PPStartup {
     Unregister-ScheduledTask -TaskName (Get-PPStartupTaskName) -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-Export-ModuleMember -Function @(
-    'Get-PPDataRoot',
-    'Initialize-PPDataRoot',
-    'Get-PPWindowsPowerShellPath',
-    'Get-PPWindowsScriptHostPath',
-    'Get-PPConfiguration',
-    'Save-PPConfiguration',
-    'Write-PPLog',
-    'Find-PPNvidiaSmi',
-    'Test-PPConfiguration',
-    'Get-PPCurrentSessionState',
-    'Get-PPMiningDecision',
-    'Get-PPMinerArguments',
-    'Start-PPMiner',
-    'Test-PPOwnedProcess',
-    'Stop-PPOwnedProcess',
-    'Test-PPOtherMinerRunning',
-    'Get-PPGpuTemperature',
-    'Get-PPStartupTaskName',
-    'Enable-PPStartup',
-    'Disable-PPStartup'
-)
+Export-ModuleMember -Function *-PP*

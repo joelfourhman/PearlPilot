@@ -2,5 +2,6 @@ Tests/.test-output/
 .local/
 *.tmp
 *.log
+!Tests/Fixtures/*.log
 Desktop.ini
 Thumbs.db
