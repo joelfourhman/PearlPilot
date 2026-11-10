@@ -300,7 +300,7 @@ try {
         $status = Get-PPTrayStatus $displaySnapshot $decision.Status $temperatureC $workerExited
         Set-PPMenuText $tray.Status $status.Title
         Set-PPMenuText $tray.Detail $status.Detail
-        $tone = if ($status.HasIssue) { 'TrayWarning' } elseif ($status.Mining) { 'TrayMining' } else { 'RailText' }
+        $tone = if ($status.HasIssue) { 'Warning' } elseif ($status.Mining) { 'Accent' } else { 'RailText' }
         $tray.Status.ForeColor = $script:menuColors[$tone]
         if ($detailsItem.Available -ne $status.HasIssue) { $detailsItem.Available = $status.HasIssue }
         if ($retryItem.Available -ne $status.CanRetry) { $retryItem.Available = $status.CanRetry }

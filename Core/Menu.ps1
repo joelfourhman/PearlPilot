@@ -1,13 +1,44 @@
 ﻿$script:menuColors = @{}
 $palette = @{
-    Canvas='#EDF3F8'; Surface='#FFFFFF'; Rail='#112538'; RailActive='#24485C'
-    RailText='#EAF4F8'; RailMuted='#9EB8CB'; Text='#183247'; Muted='#51697D'
-    Border='#D5E1EA'; Input='#F5F8FB'; Accent='#087869'; AccentSoft='#DDF5EE'
-    Hover='#E1EEF3'; Warning='#87491D'; WarningSoft='#FBEBDD'; Console='#102334'
-    TrayMining='#9BE7D4'; TrayWarning='#FFD29D'
+    Canvas='#0D131D'; Surface='#192431'; Rail='#111B28'; RailActive='#243949'
+    RailText='#EDF5FC'; RailMuted='#A6B8CB'; Text='#EAF2FA'; Muted='#A9BCCD'
+    Border='#465A6D'; Input='#101925'; Accent='#6ADFC5'; AccentSoft='#203F3D'
+    AccentInk='#102824'; AccentHover='#95EAD7'; AccentPressed='#55C6AE'
+    Hover='#293C50'; Warning='#FFD29D'; WarningSoft='#472F24'; Console='#0B121B'
 }
 foreach ($color in $palette.GetEnumerator()) {
     $script:menuColors[$color.Key] = [Drawing.ColorTranslator]::FromHtml($color.Value)
+}
+
+function Set-PPDarkCaption {
+    param($Window)
+    try {
+        if (-not ('PearlPilot.WindowChrome' -as [type])) {
+            Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace PearlPilot {
+    public static class WindowChrome {
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
+        public static void SetColors(IntPtr window, int background, int foreground) {
+            const int CaptionColor = 35;
+            const int TextColor = 36;
+            DwmSetWindowAttribute(window, CaptionColor, ref background, sizeof(int));
+            DwmSetWindowAttribute(window, TextColor, ref foreground, sizeof(int));
+        }
+    }
+}
+'@
+        }
+        [PearlPilot.WindowChrome]::SetColors($Window.Handle,
+            [Drawing.ColorTranslator]::ToWin32($script:menuColors.Rail),
+            [Drawing.ColorTranslator]::ToWin32($script:menuColors.Text))
+    } catch {
+        # The standard Windows caption is available if custom caption colors fail.
+    }
 }
 
 function New-PPMenuLabel {
@@ -32,9 +63,10 @@ function New-PPMenuButton {
     $button.Cursor = [Windows.Forms.Cursors]::Hand
     $button.Font = New-Object Drawing.Font('Segoe UI Semibold',9)
     $button.BackColor = if ($Primary) { $colors.Accent } else { $colors.Surface }
-    $button.ForeColor = if ($Primary) { $colors.Surface } else { $colors.Text }
+    $button.ForeColor = if ($Primary) { $colors.AccentInk } else { $colors.Text }
     $button.FlatAppearance.BorderColor = if ($Primary) { $colors.Accent } else { $colors.Border }
-    $button.FlatAppearance.MouseOverBackColor = if ($Primary) { [Drawing.ColorTranslator]::FromHtml('#086759') } else { $colors.Hover }
+    $button.FlatAppearance.MouseOverBackColor = if ($Primary) { $colors.AccentHover } else { $colors.Hover }
+    $button.FlatAppearance.MouseDownBackColor = if ($Primary) { $colors.AccentPressed } else { $colors.RailActive }
     $button.Height = 35
     $button
 }
@@ -87,9 +119,25 @@ function New-PPTrayPopup {
     [void]$menu.Items.Add($hostItem)
     $renderer.Add_RenderToolStripBackground({
         param($sender,$eventArgs)
+        $background = New-Object Drawing.SolidBrush($colors.Surface)
         $brush = New-Object Drawing.SolidBrush($colors.Rail)
-        try { $eventArgs.Graphics.FillRectangle($brush,1,1,$eventArgs.ToolStrip.Width-2,$header.Height+1) }
-        finally { $brush.Dispose() }
+        try {
+            $eventArgs.Graphics.FillRectangle($background,$eventArgs.AffectedBounds)
+            $eventArgs.Graphics.FillRectangle($brush,1,1,$eventArgs.ToolStrip.Width-2,$header.Height+1)
+        } finally { $background.Dispose(); $brush.Dispose() }
+    }.GetNewClosure())
+    $renderer.Add_RenderToolStripBorder({
+        param($sender,$eventArgs)
+        $pen = New-Object Drawing.Pen($colors.Border)
+        try { $eventArgs.Graphics.DrawRectangle($pen,0,0,$eventArgs.ToolStrip.Width-1,$eventArgs.ToolStrip.Height-1) }
+        finally { $pen.Dispose() }
+    }.GetNewClosure())
+    $renderer.Add_RenderSeparator({
+        param($sender,$eventArgs)
+        $pen = New-Object Drawing.Pen($colors.Border)
+        $line = [int]($eventArgs.Item.Height / 2)
+        try { $eventArgs.Graphics.DrawLine($pen,12,$line,$eventArgs.Item.Width-12,$line) }
+        finally { $pen.Dispose() }
     }.GetNewClosure())
     [pscustomobject]@{ Menu=$menu; Status=$status; Detail=$detail }
 }
@@ -516,7 +564,13 @@ function Add-PPSettingsPage {
     $updates = New-Object Windows.Forms.CheckBox
     $updates.Text = 'Automatically update WildRig when idle'
     $updates.Checked = [bool]$config.AutomaticUpdates
-    foreach ($box in @($automatic,$startup,$updates)) { $box.Dock = 'Fill'; $box.Margin = New-Object Windows.Forms.Padding(0) }
+    foreach ($box in @($automatic,$startup,$updates)) {
+        $box.Dock = 'Fill'
+        $box.Margin = New-Object Windows.Forms.Padding(0)
+        $box.FlatStyle = 'Flat'
+        $box.FlatAppearance.BorderColor = $script:menuColors.Border
+        $box.FlatAppearance.CheckedBackColor = $script:menuColors.AccentSoft
+    }
     $behavior.Controls.Add($automatic,0,1)
     $behavior.Controls.Add($startup,0,2)
     $behavior.Controls.Add($updates,0,3)
@@ -698,6 +752,9 @@ function Add-PPLogsPage {
     $tools.ColumnStyles[2].Width = 134
     $choice = New-Object Windows.Forms.ComboBox
     $choice.DropDownStyle = 'DropDownList'
+    $choice.FlatStyle = 'Flat'
+    $choice.BackColor = $script:menuColors.Input
+    $choice.ForeColor = $script:menuColors.Text
     $choice.AccessibleName = 'Log file'
     $choice.Anchor = 'Left,Right'
     $choice.Margin = New-Object Windows.Forms.Padding(0,0,10,0)
@@ -777,6 +834,7 @@ function Show-PPMenu {
     $form.AutoScaleMode = 'Dpi'
     $form.ClientSize = New-Object Drawing.Size(990,660)
     $form.MinimumSize = New-Object Drawing.Size(830,565)
+    $form.Add_HandleCreated({ Set-PPDarkCaption $this })
     $form.Add_Shown({ $this.Activate() })
     $form.SuspendLayout()
 
