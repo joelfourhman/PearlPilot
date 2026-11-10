@@ -165,11 +165,19 @@ function New-PPMenuGrid {
 
 function New-PPMenuHeading {
     param([string]$Kicker, [string]$Title, [string]$Description)
-    $heading = New-PPMenuGrid 1 @(17,36,25)
+    $heading = New-PPMenuGrid 1 @(0,0,0)
+    $heading.AutoSize = $true
+    $heading.AutoSizeMode = 'GrowAndShrink'
+    $heading.Margin = New-Object Windows.Forms.Padding(0,0,0,12)
     $heading.Controls.Add((New-PPMenuLabel $Kicker 8 'Accent' -Bold),0,0)
     $heading.Controls.Add((New-PPMenuLabel $Title 23 'Text' -Bold),0,1)
     $heading.Controls.Add((New-PPMenuLabel $Description 10 'Muted'),0,2)
-    foreach ($label in $heading.Controls) { $label.Dock = 'Fill' }
+    foreach ($row in $heading.RowStyles) { $row.SizeType = 'AutoSize' }
+    foreach ($label in $heading.Controls) {
+        $label.AutoSize = $true
+        $label.Dock = 'Top'
+        $label.Margin = New-Object Windows.Forms.Padding(0,0,0,3)
+    }
     $heading
 }
 
@@ -184,6 +192,9 @@ function New-PPMenuMetric {
     $value.AutoEllipsis = $true
     $hint = New-PPMenuLabel $InitialHint 9 'Muted'
     $hint.AutoEllipsis = $true
+    # Draw changing telemetry in one paint pass to avoid a blank frame.
+    $doubleBuffered = [Windows.Forms.Control].GetProperty('DoubleBuffered',[Reflection.BindingFlags]'Instance,NonPublic')
+    foreach ($control in @($card,$value,$hint)) { $doubleBuffered.SetValue($control,$true,$null) }
     $card.Controls.Add($caption,0,0)
     $card.Controls.Add($value,0,1)
     $card.Controls.Add($hint,0,2)
@@ -224,12 +235,15 @@ function New-PPMenuDetails {
 function Add-PPStatisticsPage {
     param($Page)
     $grid = New-PPMenuGrid 1 @(85,62,114,0)
+    $grid.RowStyles[0].SizeType = 'AutoSize'
     $Page.Controls.Add($grid)
     $grid.Controls.Add((New-PPMenuHeading 'LIVE TELEMETRY' 'Mining overview' 'Track PearlHash performance and GPU health on this PC.'),0,0)
 
-    $banner = New-PPMenuGrid 2 @(0)
+    $banner = New-PPMenuGrid 3 @(0)
     $banner.ColumnStyles[0].SizeType = 'Absolute'
     $banner.ColumnStyles[0].Width = 144
+    $banner.ColumnStyles[2].SizeType = 'Absolute'
+    $banner.ColumnStyles[2].Width = 120
     $banner.BackColor = $script:menuColors.Surface
     $banner.Padding = New-Object Windows.Forms.Padding(10,8,12,8)
     $banner.Margin = New-Object Windows.Forms.Padding(0,0,0,12)
@@ -244,6 +258,11 @@ function Add-PPStatisticsPage {
     $policy.AutoEllipsis = $true
     $banner.Controls.Add($status,0,0)
     $banner.Controls.Add($policy,1,0)
+    $mineButton = New-PPMenuButton 'Mine now' -Primary
+    $mineButton.Dock = 'Fill'
+    $mineButton.Margin = New-Object Windows.Forms.Padding(8,0,0,0)
+    $mineButton.Add_Click({ Switch-PPMining })
+    $banner.Controls.Add($mineButton,2,0)
     $grid.Controls.Add($banner,0,1)
 
     $metrics = New-PPMenuGrid 3 @(0)
@@ -325,7 +344,7 @@ function Add-PPStatisticsPage {
     $details.Controls.Add($gpu,1,0)
     $grid.Controls.Add($details,0,3)
 
-    [pscustomobject]@{ Status=$status; Policy=$policy; Hashrate=$hashrate; Temperature=$temperature; Shares=$shares;
+    [pscustomobject]@{ Status=$status; Policy=$policy; MineButton=$mineButton; Hashrate=$hashrate; Temperature=$temperature; Shares=$shares;
         Session=$sessionValues; SessionNotes=$sessionNotes; GpuName=$gpuName; GpuUsage=$gpuUsage;
         GpuMeter=$meter; GpuFill=$fill; GpuPower=$gpuPower; GpuNotes=$gpuNotes }
 }
@@ -408,6 +427,7 @@ function Add-PPSettingsPage {
     $launchRoot = $appRoot
     $stopMiner = ${function:Stop-PPManagedMiner}
     $grid = New-PPMenuGrid 1 @(85,0,53)
+    $grid.RowStyles[0].SizeType = 'AutoSize'
     $Page.Controls.Add($grid)
     $heading = if ($Setup) {
         New-PPMenuHeading 'FIRST-RUN SETUP' 'Set up PearlPilot' 'Add your public payout address to get started.'
@@ -555,6 +575,7 @@ function Add-PPSettingsPage {
 function Add-PPBackendPage {
     param($Page, [string]$PanelId)
     $grid = New-PPMenuGrid 1 @(85,114,90,0)
+    $grid.RowStyles[0].SizeType = 'AutoSize'
     $Page.Controls.Add($grid)
     $grid.Controls.Add((New-PPMenuHeading 'DOCKER BACKEND' 'WildRig control center' 'Manage releases, check prerequisites, and benchmark your miner.'),0,0)
     $versions = New-PPMenuGrid 3 @(0)
@@ -666,6 +687,7 @@ function Update-PPBackendPage {
 function Add-PPLogsPage {
     param($Page)
     $grid = New-PPMenuGrid 1 @(85,49,0)
+    $grid.RowStyles[0].SizeType = 'AutoSize'
     $Page.Controls.Add($grid)
     $grid.Controls.Add((New-PPMenuHeading 'ACTIVITY LOG' 'Logs' 'Read recent controller and WildRig messages.'),0,0)
     $tools = New-PPMenuGrid 3 @(0)

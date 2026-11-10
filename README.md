@@ -34,7 +34,7 @@ The installer checks prerequisites, verifies and downloads the latest official s
 
 1. Enter your public payout address. Confirm your worker name and GPU index; the defaults suit a single GPU.
 2. Choose automatic mining and sign-in startup if wanted, then **Save**.
-3. Right-click the PearlPilot tray icon and choose **Mine now**, or let the automatic policy wait until Windows has been locked for three minutes.
+3. Choose **Mine now** on **Overview** or in the tray menu, or let the automatic policy wait until Windows has been locked for three minutes.
 
 
 Existing installations keep their wallet, worker, policy and other preferences. **Exit a running PearlPilot before using `Install.ps1`**; the installer refuses to compete with its worker. You can also update through the tray as described below.

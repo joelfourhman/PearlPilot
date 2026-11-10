@@ -84,6 +84,25 @@ function Stop-PPManagedMiner {
     throw 'Mining stop has not been confirmed. Check Docker connectivity and controller logs before continuing.'
 }
 
+function Switch-PPMining {
+    try {
+        $stopRequested = $script:manualMining -or $script:miningRequested
+        $script:manualMining = -not $stopRequested
+        $script:userStopped = $stopRequested
+        $script:configuration.UserStopped = $script:userStopped
+        Save-PPConfiguration $script:configuration
+        if ($script:manualMining) {
+            Send-PPBackendRequest $dataRoot 'Retry'
+            Write-PPLog 'Manual mining enabled.'
+        } else {
+            Write-PPLog 'Manual mining disabled.'
+            Stop-PPManagedMiner -Reason 'Stopped manually'
+        }
+    } catch {
+        Show-PPTrayError -Action 'Manual mining' -Exception $_.Exception
+    }
+}
+
 function Set-PPSessionState {
     param([string]$State, [string]$Reason)
     if ($State -eq $script:sessionState) { return }
@@ -121,23 +140,7 @@ $tray = New-PPTrayPopup $appIcon
 $menu = $tray.Menu
 
 $mineNowItem = Add-PPTrayAction $menu $(if ($manualMining) { 'Stop mining' } else { 'Mine now' }) -Primary
-$mineNowItem.Add_Click({
-    try {
-        $stopRequested=$manualMining -or $script:miningRequested
-        $script:manualMining = -not $stopRequested
-        $script:userStopped = -not $manualMining
-        $script:configuration.UserStopped = $script:userStopped
-        Save-PPConfiguration $configuration
-        if ($manualMining) {
-            Send-PPBackendRequest $dataRoot 'Retry'
-        }
-        $mineNowItem.Text = if ($manualMining) { 'Stop mining' } else { 'Mine now' }
-        Write-PPLog $(if ($manualMining) { 'Manual mining enabled.' } else { 'Manual mining disabled.' })
-        if (-not $manualMining) { Stop-PPManagedMiner -Reason 'Stopped manually' }
-    } catch {
-        Show-PPTrayError -Action 'Manual mining' -Exception $_.Exception
-    }
-})
+$mineNowItem.Add_Click({ Switch-PPMining })
 $menuItem = Add-PPTrayAction $menu 'Open Menu'
 $menuItem.Add_Click({ $script:requestedMenuTab = 'Statistics' })
 
@@ -302,8 +305,12 @@ try {
         if ($detailsItem.Available -ne $status.HasIssue) { $detailsItem.Available = $status.HasIssue }
         if ($retryItem.Available -ne $status.CanRetry) { $retryItem.Available = $status.CanRetry }
         $automaticItem.Text = if ($automaticItem.Checked) { 'Automatic mining · On' } else { 'Automatic mining · Off' }
-        $mineNowItem.Text=if ($manualMining -or $script:miningRequested) {'Stop mining'} else {'Mine now'}
+        $miningAction = if ($manualMining -or $script:miningRequested) { 'Stop mining' } else { 'Mine now' }
+        Set-PPMenuText $mineNowItem $miningAction
+        $mineNowItem.Enabled = -not $workerExited
         if ($menuTab -eq 'Statistics') {
+            Set-PPMenuText $script:menuWindow.Statistics.MineButton $miningAction
+            $script:menuWindow.Statistics.MineButton.Enabled = -not $workerExited
             $unavailable = if ($workerExited) { $decision.Status } else { 'Waiting for the mining controller' }
             Update-PPStatisticsPage $script:menuWindow.Statistics $displaySnapshot $script:gpuSnapshot $decision.Status $unavailable
         }
